@@ -1,11 +1,14 @@
 [Transfer]
+ProtectVersion=%A
 
 [Source]
 Type=url-file
 Path=https://github.com/projectbluefin/server/releases/latest/download/
-MatchPattern=bluefin-server-ddi-@v.raw.zst
+MatchPattern=bluefin-server_@v_@u.usr.raw
 
 [Target]
 Type=partition
 Path=auto
-MatchPattern=bluefin-server-root-@v_a bluefin-server-root-@v_b
+MatchPattern=bluefin_usr_@v
+MatchPartitionType=usr
+ReadOnly=yes

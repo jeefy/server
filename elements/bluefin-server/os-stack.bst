@@ -4,6 +4,8 @@ description: Everything that goes into the Bluefin Server /usr image.
 depends:
   # freedesktop-sdk userspace + signed FSDK kernel
   - bluefin-server/os-base.bst
+  - bluefin-server/os-sd-boot-signed.bst
+  - bluefin-server/os-repart.bst
   - bluefin-server/os-release.bst
 
   # SSH enablement drop-ins (OS policy, shipped by the installed OS)
@@ -19,6 +21,9 @@ depends:
 
   # k0s component system update configuration
   - bluefin-server/os-k0s-sysupdate.bst
+
+  # OpenZFS sysext update configuration (opt-in: systemd-sysupdate --component=zfs)
+  - bluefin-server/os-zfs-sysupdate.bst
 
   # Wired DHCP configuration for the installed OS
   - bluefin-server/os-networkd.bst

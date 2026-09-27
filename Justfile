@@ -60,14 +60,12 @@ tags:
 
 # ── Validate ──────────────────────────────────────────────────────────
 [group('dev')]
-validate:
+validate: gen-dev-keys
     python3 .github/scripts/check-release-version.py
     python3 .github/scripts/check-k0s-version.py
     python3 .github/scripts/check-renovate-series.py
     python3 .github/scripts/check-flatcar-version.py
-    just bst show --deps all oci/bluefin-server-ddi.bst
-    just bst show --deps all oci/bluefin-server-installer.bst
-    just bst show --deps all oci/k0s-sysext.bst
+    just bst show --deps all oci/bluefin-server-image.bst oci/k0s-sysext.bst oci/zfs-sysext.bst
 
 # Run the unit test suite (pytest + bats).
 [group('dev')]
@@ -198,33 +196,58 @@ export-sysext: build-sysext
 gen-dev-keys *ARGS:
     bash scripts/gen-dev-keys.sh {{ARGS}}
 
-# Build the /usr DDI, signed UKI, signed systemd-boot and netboot ESP.
+# Build the release image set: DDI, sysupdate sources, signed UKIs, netboot ESP.
 [group('diskless')]
-build-diskless: gen-dev-keys
-    just bst build oci/bluefin-server-boot.bst
+build-image: gen-dev-keys
+    just bst build oci/bluefin-server-image.bst
 
-# Export the diskless artifacts to dist/diskless/.
+# Export the release image set (default: dist/diskless/).
 [group('diskless')]
-export-diskless: build-diskless
-    rm -rf dist/diskless
-    mkdir -p dist/diskless
-    just bst artifact checkout oci/bluefin-server-usr.bst --directory /src/dist/diskless/usr
-    just bst artifact checkout oci/bluefin-server-boot.bst --directory /src/dist/diskless/boot
-    mv dist/diskless/usr/*.raw dist/diskless/usr/*.usrhash dist/diskless/
-    mv dist/diskless/boot/*.efi dist/diskless/boot/*.esp.raw dist/diskless/boot/efi-keys dist/diskless/
-    cat dist/diskless/usr/SHA256SUMS dist/diskless/boot/SHA256SUMS > dist/diskless/SHA256SUMS
-    rm -rf dist/diskless/usr dist/diskless/boot
-    @echo "==> wrote diskless artifacts:" && ls -lh dist/diskless/
+export-image OUT="dist/diskless": build-image
+    rm -rf {{OUT}}
+    just bst artifact checkout oci/bluefin-server-image.bst --directory /src/{{OUT}}
+    @echo "==> wrote image artifacts:" && ls -lh {{OUT}}/
+
+# Set the image version in include/image.yml; it must increase under
+# strverscmp() (CI uses YYYYMMDD.<run number>).
+[group('diskless')]
+set-version VERSION:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "{{VERSION}}" =~ ^[0-9][0-9A-Za-z.]{0,16}$ ]] || { echo "invalid version (digits/letters/dots, at most 17 chars): {{VERSION}}" >&2; exit 1; }
+    sed -i 's/^  image-version: .*/  image-version: "{{VERSION}}"/' include/image.yml
+    grep image-version include/image.yml
+
+# Install diskless -> disk, then (with NEXT) sysupdate A->B and reboot, all in QEMU.
+[group('diskless')]
+dogfood-install NEXT="":
+    bash scripts/dogfood-install.sh dist/diskless {{NEXT}}
 
 # Boot dist/diskless/ in QEMU with Secure Boot, pulling /usr over HTTP.
 [group('diskless')]
 dogfood:
     bash scripts/dogfood-diskless.sh dist/diskless
 
-# Headless dogfood boot; passes once the node reaches multi-user.target.
+# Headless dogfood boot; passes when the in-guest probe reports no failed units.
 [group('diskless')]
 dogfood-check:
     bash scripts/dogfood-diskless.sh dist/diskless --check
+
+# Build the OpenZFS systemd-sysext (locked to one image version).
+[group('sysext')]
+build-zfs-sysext: gen-dev-keys
+    just bst build oci/zfs-sysext.bst
+
+# Export the OpenZFS sysext + SHA256SUMS to dist/sysext/.
+[group('sysext')]
+export-zfs-sysext: build-zfs-sysext
+    rm -rf dist/zfs-checkout
+    mkdir -p dist/sysext
+    just bst artifact checkout oci/zfs-sysext.bst --directory /src/dist/zfs-checkout
+    cp dist/zfs-checkout/zfs-*.raw.zst dist/sysext/
+    grep 'raw.zst$' dist/zfs-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
+    rm -rf dist/zfs-checkout
+    @echo "==> wrote zfs sysext:" && ls -lh dist/sysext/
 
 # -- Flatcar LTS kernel & ZFS --------------------------------------------------
 # Build the Flatcar LTS kernel and ZFS sysext.

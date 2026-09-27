@@ -5,12 +5,14 @@ description: |
   systemd-repart. /etc is empty on every boot; its defaults live in
   /usr/share/factory/etc and are copied in by systemd-tmpfiles.
 
-  Outputs:
-    bluefin-server_<ver>.raw              whole DDI (diskless boot, rd.systemd.pull)
-    bluefin-server_<ver>.usr-*.raw        split usr partition (sysupdate)
-    bluefin-server_<ver>.usr-*-verity.raw split verity partition (sysupdate)
-    bluefin-server_<ver>.usrhash          dm-verity root hash, baked into the UKI
-    SHA256SUMS
+  Outputs (assembled into the full DDI by bluefin-server-image.bst):
+    bluefin-server_<ver>.usr.raw          erofs usr partition (sysupdate source)
+    bluefin-server_<ver>.usr-verity.raw   dm-verity hash partition (sysupdate source)
+    bluefin-server_<ver>.usrhash          dm-verity root hash, baked into the UKIs
+
+  Partition labels are bluefin_usr_<ver> / bluefin_usr_verity_<ver>: the
+  disk UKI finds its slot by label and sysupdate matches the same pattern.
+  GPT labels hold at most 36 characters, so keep them short.
 
 (@):
 - include/image.yml
@@ -35,6 +37,8 @@ environment:
 
 variables:
   image-name: bluefin-server_%{image-version}
+  usr-label: bluefin_usr_%{image-version}
+  usr-verity-label: bluefin_usr_verity_%{image-version}
 
 config:
   commands:
@@ -81,7 +85,7 @@ config:
     mv /sysroot/etc "${factory}"
     mkdir /sysroot/etc
     conf=/sysroot/usr/lib/tmpfiles.d/00-bluefin-factory-etc.conf
-    : > "${conf}"
+    printf 'd /etc 0755 root root -\n' > "${conf}"
     for entry in $(ls -A "${factory}"); do
       if [ -L "${factory}/${entry}" ]; then
         printf 'L /etc/%s - - - - %s\n' "${entry}" "$(readlink "${factory}/${entry}")" >> "${conf}"
@@ -97,7 +101,7 @@ config:
     cat > /tmp/repart.d/10-usr.conf <<EOF
     [Partition]
     Type=usr
-    Label=bluefin-server_usr_%{image-version}
+    Label=%{usr-label}
     Format=erofs
     Compression=lz4hc
     CopyFiles=/usr:/
@@ -109,7 +113,7 @@ config:
     cat > /tmp/repart.d/20-usr-verity.conf <<EOF
     [Partition]
     Type=usr-verity
-    Label=bluefin-server_usr_verity_%{image-version}
+    Label=%{usr-verity-label}
     Verity=hash
     VerityMatchKey=usr
     Minimize=best
@@ -132,5 +136,5 @@ config:
     fi
     grep -Eq '^[0-9a-f]{64}$' "%{image-name}.usrhash"
     echo "usrhash: $(cat "%{image-name}.usrhash")"
+    rm -f "%{image-name}.raw"
     ls -l
-    sha256sum --binary *.raw > SHA256SUMS

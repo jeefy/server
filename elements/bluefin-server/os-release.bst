@@ -17,6 +17,10 @@ config:
   install-commands:
   - mkdir -p "%{install-root}/usr/lib"
   - |
+    # GPT labels (bluefin_usr_verity_%A in files/os/repart.d) hold 36 characters.
+    v='%{image-version}'
+    [ "${#v}" -le 17 ] || { echo "ERROR: image-version ${v} is longer than 17 characters" >&2; exit 1; }
+  - |
     cat <<EOF > "%{install-root}/usr/lib/os-release"
     NAME="Bluefin Server"
     ID=bluefin-server
