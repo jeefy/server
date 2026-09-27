@@ -72,7 +72,7 @@ def test_missing_seed_fetches_before_activation_without_blocking_activation_retr
         "ExecStart=/usr/bin/install -D -m 0644 "
         "/var/lib/k0s/k0s.raw /run/extensions/k0s.raw"
     ) in first_boot
-    assert "ExecStart=/usr/bin/systemd-sysext merge" in first_boot
+    assert "ExecStart=/usr/bin/systemd-sysext refresh" in first_boot
 
 
 def test_k0s_first_boot_retries_until_controller_starts() -> None:
@@ -91,16 +91,11 @@ def test_k0s_first_boot_retries_until_controller_starts() -> None:
     )
     assert "ExecStart=/usr/bin/systemd-sysupdate update" not in service
     assert "ExecStart=/usr/bin/systemctl enable --now systemd-sysext.service" not in service
-    assert "ExecStart=/usr/bin/systemd-sysext merge" in service
-    assert (
-        "ExecStart=/usr/bin/systemd-tmpfiles --create "
-        "/usr/lib/tmpfiles.d/k0s-manifests.conf"
-    ) in service
+    assert "ExecStart=/usr/bin/systemd-sysext refresh" in service
+    assert "kubeflex" not in service, "the KubeStellar sysext seeds its own state"
     assert "ExecStart=/usr/bin/systemctl daemon-reload" in service
-    assert (
-        "ExecStart=/usr/bin/systemctl enable --now k0scontroller.service"
-        in service
-    )
+    assert "systemctl enable --now k0scontroller.service" in service
+    assert "[ -s /etc/k0s/token ]" in service and "k0sworker.service" in service
     assert (
         "ExecStartPost=/usr/bin/touch /var/lib/k0s/.first-boot-complete"
         not in service
@@ -110,6 +105,11 @@ def test_k0s_first_boot_retries_until_controller_starts() -> None:
 
 def test_k0s_first_boot_is_packaged_but_opt_in() -> None:
     assert not PRESET.exists(), "k0s is opt-in: no preset may enable k0s-first-boot"
+    opt_in = PRESET.parent / "20-bluefin-opt-in.preset"
+    lines = opt_in.read_text(encoding="utf-8").splitlines()
+    assert "disable k0s-first-boot.service" in lines, (
+        "FSDK has no 'disable *' default, so the unit must be disabled explicitly"
+    )
     assert "path: files/os/systemd/system" in ELEMENT.read_text(encoding="utf-8")
     assert "target: /usr/lib/systemd/system" in ELEMENT.read_text(encoding="utf-8")
     assert (
