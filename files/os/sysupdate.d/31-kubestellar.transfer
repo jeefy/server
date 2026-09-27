@@ -1,12 +1,15 @@
 [Transfer]
+Features=kubestellar
+ProtectVersion=%A
 
 [Source]
 Type=url-file
 Path=https://github.com/projectbluefin/server/releases/latest/download/
-MatchPattern=kubestellar-@v.raw.zst
+MatchPattern=kubestellar_@v.raw.zst
 
 [Target]
 Type=regular-file
-Path=/var/lib/extensions/kubestellar.raw.v
+Path=/var/lib/extensions
 MatchPattern=kubestellar_@v.raw
-Mode=0644
+Mode=0444
+InstancesMax=2

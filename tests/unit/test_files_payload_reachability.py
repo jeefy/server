@@ -49,6 +49,9 @@ HOST_TOOLING = {
     "files/bin/bluefin-kubestellar",
     # limactl VM template consumed by Justfile `test-e2e-lima`.
     "files/lima",
+    # Release public key; CI copies it to files/boot-keys/import-pubring.pgp,
+    # from where bluefin-server/os-sysupdate-keys.bst installs it.
+    "files/os/sysupdate-keys/import-pubring.gpg",
 }
 
 # Payload that claims to ship but is staged by no element. Each entry must name

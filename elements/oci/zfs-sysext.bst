@@ -2,11 +2,15 @@ kind: manual
 description: |
   Produce the opt-in OpenZFS systemd-sysext.
 
-  Output: zfs-<zfs-version>-<image-version>.raw, its .raw.zst release asset,
-  and SHA256SUMS. The spl/zfs modules only load on the kernel they were
-  built against, so extension-release.zfs pins ID=bluefin-server and
-  VERSION_ID=<image-version>, and the asset name carries the image version
-  so systemd-sysupdate sees a new version for every image build.
+  Output: zfs_<image-version>.raw, its .raw.zst release asset, and
+  SHA256SUMS. The spl/zfs modules only load on the kernel they were built
+  against, so the sysext is locked to one image: its extension-release file
+  is extension-release.zfs_<image-version> (matching the installed file
+  name) with ID=bluefin-server and VERSION_ID=<image-version>. Several
+  versions can sit side by side in /var/lib/extensions; systemd-sysext
+  merges only the one matching the booted image, so an A/B rollback keeps
+  ZFS. Installed nodes get it in lock-step with OS updates through the
+  `zfs` sysupdate feature (`updatectl enable zfs`).
 
   Contents: OpenZFS tools, libraries, udev rules and systemd units from
   zfs/openzfs-signed.bst; libtirpc (not in the base image); the signed
@@ -117,7 +121,7 @@ config:
     done
 
     install -d "sysext%{indep-libdir}/extension-release.d"
-    rel="sysext%{indep-libdir}/extension-release.d/extension-release.zfs"
+    rel="sysext%{indep-libdir}/extension-release.d/extension-release.zfs_%{image-version}"
     cp sysext-src/extension-release.zfs "${rel}"
     echo "VERSION_ID=%{image-version}" >> "${rel}"
     echo "ARCHITECTURE=%{systemd-arch}" >> "${rel}"
@@ -125,12 +129,12 @@ config:
   - |
     set -euo pipefail
     OUT="%{install-root}"
-    FNAME="zfs-%{zfs-version}-%{image-version}.raw"
+    FNAME="zfs_%{image-version}.raw"
 
     mkdir -p "${OUT}"
     mkfs.erofs -d0 "${OUT}/${FNAME}" sysext
     zstd -T0 -19 -q "${OUT}/${FNAME}" -o "${OUT}/${FNAME}.zst"
     (
       cd "${OUT}"
-      sha256sum --binary "${FNAME}" "${FNAME}.zst" > SHA256SUMS
+      sha256sum --binary "${FNAME}.zst" > SHA256SUMS
     )

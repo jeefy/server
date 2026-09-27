@@ -4,6 +4,7 @@ default:
     @just --list
 
 # Same bst2 container image FSDK/dakota CI uses -- pinned by SHA.
+export oras_image := env("ORAS_IMAGE", "ghcr.io/oras-project/oras:v1.3.4")
 export bst2_image := env("BST2_IMAGE", "registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:64eb0b4930d57a92710822898fb73af6cc1ae35d")
 
 # Prefix for podman calls: empty when rootless podman works, "sudo" otherwise.
@@ -134,6 +135,27 @@ set-version VERSION:
 [group('diskless')]
 dogfood-install NEXT="":
     bash scripts/dogfood-install.sh dist/diskless {{NEXT}}
+
+# REF=ghcr.io/<owner>/bluefin-server or <registry-host>:30500/bluefin-server
+# (PLAIN_HTTP=1); log in with podman login first. One layer per file.
+# Publish an image set as an ORAS OCI artifact tagged <version> and latest.
+[group('diskless')]
+publish-oci REF DIR="dist/diskless" PLAIN_HTTP="0":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{DIR}}"
+    uki="$(ls bluefin-server-netboot_*.efi)"
+    ver="${uki#bluefin-server-netboot_}"; ver="${ver%.efi}"
+    mapfile -t files < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+    extra=()
+    [ "{{PLAIN_HTTP}}" = 1 ] && extra+=(--plain-http)
+    auth="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/containers/auth.json"
+    [ -f "${auth}" ] && extra+=(--registry-config /auth.json) && mounts=(-v "${auth}:/auth.json:ro") || mounts=()
+    podman run --rm --network=host --security-opt label=disable "${mounts[@]}" -v "$PWD:/w:ro" -w /w \
+        {{oras_image}} push "${extra[@]}" \
+        --artifact-type application/vnd.projectbluefin.server.release.v1 \
+        --annotation "org.opencontainers.image.version=${ver}" \
+        "{{REF}}:${ver},latest" "${files[@]}"
 
 # Boot dist/diskless/ in QEMU with Secure Boot, pulling /usr over HTTP.
 [group('diskless')]

@@ -18,7 +18,12 @@ description: |
                                            UKI + key enrollment; write it to a USB
                                            stick to boot diskless without HTTP boot
     efi-keys/                              Secure Boot enrollment payloads
-    SHA256SUMS
+    zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst
+                                           opt-in sysexts locked to this image version
+    k0s-<k0s-ver>.raw.zst                  opt-in k0s sysext (own version axis)
+    SHA256SUMS, SHA256SUMS.gpg             manifest of all of the above, signed with
+                                           files/boot-keys/sysupdate-signing.asc; the
+                                           image trusts the matching import-pubring.pgp
 
 (@):
 - include/image.yml
@@ -38,6 +43,17 @@ build-depends:
 - filename: bluefin-server/os-sd-boot-signed.bst
   config:
     location: /sd-boot
+- freedesktop-sdk.bst:components/gnupg.bst
+- bluefin-server/keys/boot-keys.bst
+- filename: oci/k0s-sysext.bst
+  config:
+    location: /sysext/k0s
+- filename: oci/kubestellar-sysext.bst
+  config:
+    location: /sysext/kubestellar
+- filename: oci/zfs-sysext.bst
+  config:
+    location: /sysext/zfs
 
 variables:
   image-name: bluefin-server_%{image-version}
@@ -98,6 +114,18 @@ config:
 
   - |
     set -eu
+    cp /sysext/k0s/k0s-*.raw.zst /sysext/kubestellar/kubestellar_%{image-version}.raw.zst \
+       /sysext/zfs/zfs_%{image-version}.raw.zst "%{install-root}/"
+
+  - |
+    set -eu
     cd "%{install-root}"
-    sha256sum --binary *.raw *.efi > SHA256SUMS
+    sha256sum --binary *.raw *.efi *.raw.zst > SHA256SUMS
     cat SHA256SUMS
+    export GNUPGHOME=/tmp/gnupg
+    mkdir -m 0700 -p "${GNUPGHOME}"
+    gpg --batch --quiet --import /boot-keys/sysupdate-signing.asc
+    gpg --batch --yes --pinentry-mode loopback --passphrase '' \
+      --detach-sign --output SHA256SUMS.gpg SHA256SUMS
+    # The keyring the image ships must accept this signature.
+    gpgv --keyring /boot-keys/import-pubring.pgp SHA256SUMS.gpg SHA256SUMS

@@ -18,6 +18,9 @@ depends:
 # for them, so without this systemd-veritysetup never finishes.
 - freedesktop-sdk.bst:components/lvm2.bst
 - freedesktop-sdk.bst:components/curl.bst
+# verify=signature: gpgv/gpg plus the image keyring for SHA256SUMS.gpg
+- freedesktop-sdk.bst:components/gnupg.bst
+- bluefin-server/os-sysupdate-keys.bst
 - bluefin-server/os-release.bst
 - bluefin-server/initrd/initrd-config.bst
 # Opt-in: runs only when an ignition.config / ignition.config.url credential is passed

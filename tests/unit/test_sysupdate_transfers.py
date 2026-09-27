@@ -64,7 +64,13 @@ def split_match_pattern(pattern: str) -> tuple[str, str]:
 def test_sysupdate_directories_are_populated():
     generic = sorted(p.name for p in SYSUPDATE_DIR.glob("*.transfer"))
     k0s = sorted(p.name for p in K0S_SYSUPDATE_DIR.glob("*.transfer"))
-    assert generic == ["10-usr.transfer", "11-usr-verity.transfer", "20-uki.transfer"]
+    assert generic == [
+        "10-usr.transfer",
+        "11-usr-verity.transfer",
+        "20-uki.transfer",
+        "30-zfs.transfer",
+        "31-kubestellar.transfer",
+    ]
     assert k0s == ["70-k0s.transfer"]
 
 
@@ -243,21 +249,23 @@ def test_k0s_sysext_image_name_matches_its_extension_release_name():
     )
 
 
+IMAGE_ELEMENT = ELEMENTS_DIR / "oci" / "bluefin-server-image.bst"
+
+
 @pytest.mark.parametrize("path", transfer_paths(), ids=lambda p: p.name)
-def test_every_source_artifact_is_staged_in_release_workflow(path: Path):
-    """The release asset a transfer downloads must be staged into dist/release/ by build.yml."""
-    prefix, _ = split_match_pattern(
-        load_transfer(path)["Source"]["MatchPattern"]
-    )
+def test_every_source_artifact_is_in_the_signed_image_set(path: Path):
+    """The asset a transfer downloads must be in the image set, whose signed
+    SHA256SUMS the release publishes as-is (dist/diskless/)."""
+    prefix, _ = split_match_pattern(load_transfer(path)["Source"]["MatchPattern"])
+    image = IMAGE_ELEMENT.read_text()
+    assert prefix in image, f"{path.name}: {prefix!r} assets are not in {IMAGE_ELEMENT.name}"
     build_yml = (REPO_ROOT / ".github" / "workflows" / "build.yml").read_text()
-    assert re.search(rf"cp\s+.*{re.escape(prefix)}\*.*dist/release/", build_yml), (
-        f"{path.name} source asset prefix {prefix!r} is not staged to dist/release/ in .github/workflows/build.yml"
-    )
+    assert "find dist/diskless -maxdepth 1 -type f" in build_yml
+    assert "gpg --batch --yes --pinentry-mode loopback" in image
+    assert "gpgv --keyring /boot-keys/import-pubring.pgp SHA256SUMS.gpg SHA256SUMS" in image
 
 
 def test_k0s_release_staging_does_not_use_legacy_k3s_name() -> None:
-    build_yml = (REPO_ROOT / ".github" / "workflows" / "build.yml").read_text()
-    assert re.search(r"cp\s+.*k0s-\*\.raw\.zst.*dist/release/", build_yml)
-    assert not re.search(
-        r"cp\s+.*k3s-\*\.raw\.zst.*dist/release/", build_yml
-    )
+    image = IMAGE_ELEMENT.read_text()
+    assert "/sysext/k0s/k0s-*.raw.zst" in image
+    assert "k3s-" not in image

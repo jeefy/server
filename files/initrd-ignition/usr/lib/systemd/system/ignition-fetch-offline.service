@@ -6,8 +6,7 @@
 Description=Ignition (fetch-offline)
 Documentation=https://coreos.github.io/ignition/
 ConditionPathExists=/etc/initrd-release
-ConditionCredential=|ignition.config
-ConditionCredential=|ignition.config.url
+ConditionPathExists=/run/ignition/user.ign
 DefaultDependencies=no
 Before=ignition-complete.target
 After=basic.target

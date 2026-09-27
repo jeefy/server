@@ -5,7 +5,9 @@ description: |
   secret generators, seeded by kubestellar-seed.service before
   k0scontroller.service starts. Requires the k0s sysext.
 
-  Output: kubestellar-<image-version>.raw, .raw.zst, and SHA256SUMS.
+  Output: kubestellar_<image-version>.raw, .raw.zst, and SHA256SUMS. Locked to
+  one image version like the ZFS sysext and updated in lock-step with the OS
+  through the `kubestellar` sysupdate feature.
 
 (@):
   - include/image.yml
@@ -28,9 +30,6 @@ sources:
   - kind: local
     path: files/k0s/kubeflex
     directory: kubeflex-src
-  - kind: local
-    path: files/os/issue.d/40-kubestellar.issue
-    directory: issue-src
 
 variables:
   strip-binaries: ""
@@ -40,7 +39,7 @@ config:
     - |
       set -euo pipefail
       OUT="%{install-root}"
-      FNAME="kubestellar-%{image-version}.raw"
+      FNAME="kubestellar_%{image-version}.raw"
       root=sysext/usr
       mkdir -p "${root}/lib/systemd/system/k0scontroller.service.wants" \
         "${root}/lib/extension-release.d" "${root}/lib/tmpfiles.d" "${root}/lib/issue.d" \
@@ -48,9 +47,10 @@ config:
       cp -a sysext-src/kubestellar-seed.service "${root}/lib/systemd/system/"
       ln -s ../kubestellar-seed.service "${root}/lib/systemd/system/k0scontroller.service.wants/kubestellar-seed.service"
       cp -a sysext-src/k0s-manifests.conf "${root}/lib/tmpfiles.d/"
-      cp -a sysext-src/extension-release.kubestellar "${root}/lib/extension-release.d/"
-      echo "VERSION_ID=%{image-version}" >> "${root}/lib/extension-release.d/extension-release.kubestellar"
-      cp -a issue-src/40-kubestellar.issue "${root}/lib/issue.d/"
+      rel="${root}/lib/extension-release.d/extension-release.kubestellar_%{image-version}"
+      cp -a sysext-src/extension-release.kubestellar "${rel}"
+      echo "VERSION_ID=%{image-version}" >> "${rel}"
+      cp -a sysext-src/40-kubestellar.issue "${root}/lib/issue.d/"
       cp -a manifests-src/* "${root}/share/k0s/manifests/"
       cp -a kiosk-src/. "${root}/share/k0s/kiosk/"
       cp -a kubeflex-src/. "${root}/share/k0s/kubeflex/"

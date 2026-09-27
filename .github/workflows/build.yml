@@ -35,20 +35,26 @@ jobs:
         with:
           tool: just@1.58.0
 
-      # Releases from main are signed with the project keys (a base64 tarball
-      # of files/boot-keys/). Pull requests get throwaway keys: their images
-      # boot in CI's QEMU check but are never published.
+      # Releases from main are signed with the project keys: Secure Boot and
+      # module keys come from BOOT_KEYS_TARBALL (a base64 tarball of
+      # files/boot-keys/), the SHA256SUMS signing key from
+      # SYSUPDATE_SIGNING_KEY, and the image trusts the committed release
+      # keyring. Pull requests get throwaway keys and are never published.
       - name: Install signing keys
         env:
           BOOT_KEYS_TARBALL: ${{ github.ref == 'refs/heads/main' && secrets.BOOT_KEYS_TARBALL || '' }}
+          SYSUPDATE_SIGNING_KEY: ${{ github.ref == 'refs/heads/main' && secrets.SYSUPDATE_SIGNING_KEY || '' }}
         run: |
           set -euo pipefail
-          if [ -n "${BOOT_KEYS_TARBALL}" ]; then
+          if [ "${GITHUB_REF}" = refs/heads/main ]; then
+            if [ -z "${BOOT_KEYS_TARBALL}" ] || [ -z "${SYSUPDATE_SIGNING_KEY}" ]; then
+              echo "BOOT_KEYS_TARBALL and SYSUPDATE_SIGNING_KEY are required to build releases on main" >&2
+              exit 1
+            fi
             mkdir -p files/boot-keys
             echo "${BOOT_KEYS_TARBALL}" | base64 -d | tar -xz -C files/boot-keys
-          elif [ "${GITHUB_REF}" = refs/heads/main ]; then
-            echo "BOOT_KEYS_TARBALL is required to build releases on main" >&2
-            exit 1
+            printf '%s\n' "${SYSUPDATE_SIGNING_KEY}" > files/boot-keys/sysupdate-signing.asc
+            cp files/os/sysupdate-keys/import-pubring.gpg files/boot-keys/import-pubring.pgp
           else
             just gen-dev-keys
           fi
@@ -88,44 +94,13 @@ jobs:
       - name: Build and export the image set
         run: just export-image
 
-      - name: Build and export the k0s, KubeStellar and OpenZFS sysexts
-        run: |
-          just export-sysext
-          just export-zfs-sysext
-
-      - name: Upload image artifacts for the boot test
+      # The image set carries its own signed SHA256SUMS(.gpg) covering the
+      # OS images, UKIs and the k0s/KubeStellar/OpenZFS sysexts.
+      - name: Upload image artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image
           path: dist/diskless/
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Sign release SHA256SUMS manifest
-        if: github.ref == 'refs/heads/main'
-        env:
-          SYSUPDATE_SIGNING_KEY: ${{ secrets.SYSUPDATE_SIGNING_KEY }}
-        run: |
-          set -euo pipefail
-          mkdir -p dist/release
-          cp dist/diskless/bluefin-server_*.raw dist/diskless/bluefin-server-*.efi dist/release/
-          cp dist/diskless/bluefin-server-netboot_*.esp.raw dist/release/
-          cp dist/sysext/k0s-*.raw.zst dist/sysext/kubestellar-*.raw.zst dist/sysext/zfs-*.raw.zst dist/release/
-          (cd dist/release && sha256sum --binary -- * > SHA256SUMS)
-          GNUPGHOME=$(mktemp -d)
-          export GNUPGHOME
-          trap 'rm -rf "$GNUPGHOME"' EXIT
-          echo "$SYSUPDATE_SIGNING_KEY" | gpg --batch --import
-          gpg --batch --yes --detach-sign --armor -o dist/release/SHA256SUMS.gpg dist/release/SHA256SUMS
-
-      # Hand the signed assets to the release job below; the build job itself
-      # stays read-only, so it cannot publish the release.
-      - name: Upload release assets artifact
-        if: github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-assets
-          path: dist/release/
           if-no-files-found: error
           retention-days: 1
 
@@ -161,22 +136,24 @@ jobs:
       - name: Install to disk and boot it
         run: bash scripts/dogfood-install.sh dist/diskless
 
-  # Publishes the signed assets as a new, immutable GitHub Release. Only runs
-  # on pushes/dispatches to main, where the code is already reviewed, and is
-  # the only job in this workflow that holds contents: write.
+  # Publishes the signed image set as a new, immutable GitHub Release and as
+  # an ORAS OCI artifact (one layer per file, tags <version> and latest).
+  # Only runs on pushes/dispatches to main, where the code is already
+  # reviewed, and is the only job in this workflow that holds write tokens.
   release:
     if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}
     needs: [build, boot-test]
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write # creates the GitHub Release and uploads its assets
+      packages: write # pushes the OCI artifact to ghcr.io
     steps:
-      - name: Download release assets
+      - name: Download image artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: release-assets
-          path: dist/release
+          name: image
+          path: dist/diskless
 
       # A version is published exactly once: creating an existing tag fails
       # the job instead of overwriting assets that nodes may already trust.
@@ -187,6 +164,26 @@ jobs:
         run: |
           set -euo pipefail
           V="${{ needs.build.outputs.version }}"
-          gh release create "v${V}" dist/release/* \
+          find dist/diskless -maxdepth 1 -type f -print0 | xargs -0 gh release create "v${V}" \
             --title "Bluefin Server ${V}" \
             --notes "Image ${V} built from ${GITHUB_SHA}."
+
+      - name: Set up oras
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.4
+
+      - name: Push OCI artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ needs.build.outputs.version }}"
+          REF="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/bluefin-server"
+          echo "${GITHUB_TOKEN}" | oras login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          cd dist/diskless
+          mapfile -t files < <(find . -maxdepth 1 -type f -printf '%f\n' | sort)
+          oras push --artifact-type application/vnd.projectbluefin.server.release.v1 \
+            --annotation "org.opencontainers.image.version=${V}" \
+            --annotation "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            "${REF}:${V},latest" "${files[@]}"

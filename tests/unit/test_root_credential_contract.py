@@ -18,7 +18,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DDI_ELEMENT = REPO_ROOT / "elements" / "oci" / "bluefin-server-usr.bst"
 SSHD_DROPIN = REPO_ROOT / "files" / "os" / "ssh" / "sshd_config.d" / "bluefin-server.conf"
-ISSUE_FILE = REPO_ROOT / "files" / "os" / "issue.d" / "40-kubestellar.issue"
+ISSUE_FILE = REPO_ROOT / "files" / "os" / "issue.d" / "30-bluefin.issue"
+KUBESTELLAR_ISSUE = REPO_ROOT / "files" / "kubestellar" / "sysext" / "40-kubestellar.issue"
 
 
 def _root_shadow_fields(ddi_element: str) -> list[str]:

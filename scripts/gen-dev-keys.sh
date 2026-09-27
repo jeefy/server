@@ -8,6 +8,9 @@
 #   files/boot-keys/{PK,KEK,DB}.{key,crt}
 #   files/boot-keys/linux-module-cert.key         private, never staged into the kernel build
 #   files/boot-keys/modules/linux-module-cert.crt public, baked into the kernel's trusted keyring
+#   files/boot-keys/sysupdate-signing.asc         OpenPGP secret key that signs SHA256SUMS
+#   files/boot-keys/import-pubring.pgp            its public keyring, installed as
+#                                                 /etc/systemd/import-pubring.pgp (importd, sysupdate)
 #
 # Changing modules/linux-module-cert.crt changes the kernel's cache key and
 # forces a kernel rebuild, so existing keys are kept unless --force is given.
@@ -17,16 +20,31 @@ dir="$(cd "$(dirname "$0")/.." && pwd)/files/boot-keys"
 force=0
 [ "${1:-}" = "--force" ] && force=1
 
+mkdir -p "${dir}/modules"
+chmod 0700 "${dir}"
+umask 077
+owner="${USER:-dev}@$(hostname -s 2>/dev/null || echo localhost)"
+
+gen_signing_key() {
+    local home
+    home="$(mktemp -d)"
+    GNUPGHOME="${home}" gpg --batch --quiet --passphrase '' \
+        --quick-gen-key "Bluefin Server dev image signing (${owner})" rsa3072 sign never
+    GNUPGHOME="${home}" gpg --batch --armor --export-secret-keys > "${dir}/sysupdate-signing.asc"
+    GNUPGHOME="${home}" gpg --batch --export > "${dir}/import-pubring.pgp"
+    chmod 0644 "${dir}/import-pubring.pgp"
+    rm -rf "${home}"
+    echo "Generated image signing key in ${dir}"
+}
+
+if [ ! -s "${dir}/sysupdate-signing.asc" ] || [ "${force}" = 1 ]; then
+    gen_signing_key
+fi
+
 if [ -e "${dir}/DB.key" ] && [ "${force}" = 0 ]; then
     echo "Keys already exist in ${dir}; pass --force to regenerate (rebuilds the kernel)."
     exit 0
 fi
-
-mkdir -p "${dir}/modules"
-chmod 0700 "${dir}"
-umask 077
-
-owner="${USER:-dev}@$(hostname -s 2>/dev/null || echo localhost)"
 
 for name in PK KEK DB; do
     openssl req -new -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \

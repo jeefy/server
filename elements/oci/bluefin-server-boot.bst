@@ -68,7 +68,7 @@ variables:
     console=tty0 console=ttyS0,115200
   netboot-cmdline: >-
     root=tmpfs
-    rd.systemd.pull=raw,machine,verify=no,blockdev,bootorigin:rootdisk:%{image-name}.raw
+    rd.systemd.pull=raw,machine,verify=signature,blockdev,bootorigin:rootdisk:%{image-name}.raw
     systemd.verity_usr_data=/dev/disk/by-loop-ref/rootdisk.raw-part1
     systemd.verity_usr_hash=/dev/disk/by-loop-ref/rootdisk.raw-part2
     systemd.default_device_timeout_sec=300
