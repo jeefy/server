@@ -47,15 +47,24 @@ The base OS `/usr/lib/os-release` identifies as `ID=bluefin-server` with
 sysext merges when its `extension-release` metadata matches the host `ID=` (or
 uses `ID=_any`) and, when it pins `VERSION_ID=`, the host version.
 
-The two first-party extensions make opposite choices:
+The first-party extensions make opposite choices:
 
 - **k0s** (`files/k0s/sysext/extension-release.k0s`) uses `ID=_any` and does
   not pin the image version, so it merges on any host image.
-- **OpenZFS** (`files/zfs/sysext/extension-release.zfs`) pins
-  `ID=bluefin-server` and `VERSION_ID=<image-version>`, because its kernel
-  modules only load on the exact kernel they were built against. The asset
-  name (`zfs-<zfs-version>-<image-version>.raw`) carries the image version so
-  `systemd-sysupdate --component=zfs` sees a new version for every image build.
+- **OpenZFS and KubeStellar** are version-locked to the image: their
+  extension-release file is named after the versioned image file
+  (`extension-release.zfs_<image-version>`,
+  `extension-release.kubestellar_<image-version>`) with `ID=bluefin-server`
+  and `VERSION_ID=<image-version>`, because the ZFS kernel modules only load
+  on the exact kernel they were built against (and the KubeStellar stack is
+  validated against one image). Several versions sit side by side in
+  `/var/lib/extensions` as `zfs_<ver>.raw` / `kubestellar_<ver>.raw`;
+  systemd-sysext merges only the one matching the booted image, so an A/B
+  rollback keeps its ZFS. Installed nodes receive them in lock-step with OS
+  updates through the optional `zfs` / `kubestellar` sysupdate features
+  (see `systemd-sysupdate-verification.md`); diskless nodes get them from
+  Ignition, which writes `/etc/extensions/<name>_<ver>.raw` with a sha256
+  verification hash.
 
 Third-party extensions built for another distribution (for example the Flatcar
 System Extension Bakery) only merge with `systemd-sysext merge --force`, and
@@ -85,7 +94,13 @@ systemd-sysext refresh
 ```
 
 The `systemd-sysext.service` unit performs a refresh at boot, so extensions in
-`/var/lib/extensions/` become available without manual intervention.
+`/var/lib/extensions/` become available without manual intervention. One
+caveat: the refresh happens after PID 1 has built the boot transaction, so
+`[Install]` symlinks shipped inside a sysext (for example `zfs.target` in
+`multi-user.target.wants`) are not part of it. The enabled oneshot
+`bluefin-sysext-activate.service` runs after `systemd-sysext.service` and
+re-requests `multi-user.target`, which adds jobs for the now-visible wants;
+that is how `zfs.target` comes up at boot when the ZFS sysext is merged.
 
 ## Removing an extension
 

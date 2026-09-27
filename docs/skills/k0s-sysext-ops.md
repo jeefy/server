@@ -15,13 +15,15 @@ systemd-sysext extensions on a live Bluefin Server host.
 
 ## The split
 
-Bluefin Server ships two separate, opt-in sysext components:
+Bluefin Server ships two separate, opt-in sysexts:
 
 - **k0s** (`oci/k0s-sysext.bst`): the k0s binary plus `k0scontroller.service`
-  and `k0sworker.service`. No Kubernetes add-ons are included.
+  and `k0sworker.service`. No Kubernetes add-ons are included. It is its own
+  sysupdate component on its own version axis (`ID=_any`).
 - **KubeStellar** (`oci/kubestellar-sysext.bst`): Argo CD and KubeStellar
-  manifests, loopback kiosk proxy assets, kubeflex secret generators, and a
-  login issue banner. Requires the k0s sysext.
+  manifests, loopback kiosk proxy assets, kubeflex secret generators, and the
+  KubeStellar console issue banner. Requires the k0s sysext. It is
+  version-locked to the OS image and follows OS updates.
 
 ## Enabling k0s on a host
 
@@ -49,15 +51,19 @@ start automatically on the next boot when the token is present.
 
 ## Enabling the KubeStellar appliance
 
-The KubeStellar sysext is opt-in. Install it into the extension versioned
-directory with:
+The KubeStellar sysext is opt-in and version-locked to the OS image. Enable
+its sysupdate feature so it downloads with every OS update:
 
 ```bash
-systemd-sysupdate --component=kubestellar update
+updatectl enable kubestellar
+# or, equivalently, a drop-in /etc/sysupdate.d/kubestellar.feature.d/enable.conf
+# with [Feature] Enabled=true, then systemd-sysupdate update
 ```
 
-This places `kubestellar_<ver>.raw` under `/var/lib/extensions/kubestellar.raw.v/`.
-`systemd-sysext` merges it on the next refresh or boot.
+This places `kubestellar_<ver>.raw` under `/var/lib/extensions/` (two versions
+kept). `systemd-sysext` merges only the one matching the booted image, on the
+next refresh or boot, so a boot-counted OS rollback keeps the matching
+KubeStellar.
 
 Once merged, `kubestellar-seed.service` is pulled in by `k0scontroller.service`
 via a `.wants` drop-in and runs **Before** it. The seed unit:
@@ -104,7 +110,8 @@ Placing a token at `/etc/k0s/token` switches the node to `k0sworker.service`.
 - **Extension not merged**: Check `systemd-sysext status`. For k0s, verify the
   persistent image is `/var/lib/k0s/k0s.raw`; `k0s-first-boot.service` copies it
   into `/run/extensions/k0s.raw`. For KubeStellar, verify the versioned image
-  exists under `/var/lib/extensions/kubestellar.raw.v/`.
+  matching the booted OS version exists at
+  `/var/lib/extensions/kubestellar_<ver>.raw`.
 - **Seed unit did not run**: Confirm the KubeStellar sysext is merged and that
   `k0scontroller.service` is starting. The seed unit has
   `Before=k0scontroller.service` and `RequiresMountsFor=/var/lib/k0s`.

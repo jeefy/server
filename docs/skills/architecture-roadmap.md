@@ -22,9 +22,14 @@ For reference, so future planning does not redo them:
 
 - A/B usr slots with `systemd-sysupdate` and boot-counted automatic rollback (`files/os/repart.d/`, `files/os/sysupdate.d/`).
 - Read-only erofs `/usr` verified by dm-verity, pinned by `usrhash=` in the signed UKIs.
-- Diskless network boot (`rd.systemd.pull` of the OS DDI into RAM) and diskless-native install via `systemd-sysinstall`.
+- Diskless network boot (`rd.systemd.pull` of the OS DDI into RAM, `verify=signature` against the initrd keyring) and diskless-native install via `systemd-sysinstall`.
 - Secure Boot end to end (signed systemd-boot, signed UKIs, signed modules, `lockdown=integrity`).
-- Opt-in Ignition provisioning via system credentials.
+- Opt-in Ignition provisioning via system credentials, plus `bluefin-node.ign` next to the UKI on UEFI HTTP boot.
+- k0s role units (controller vs worker) and the KubeStellar/Argo CD/kiosk stack split into its own sysext.
+- Combined `SHA256SUMS` over the whole image set, signed inside `oci/bluefin-server-image.bst` and verified by both sysupdate and the diskless pull.
+- OCI artifact output (`ghcr.io/<owner>/bluefin-server:<ver>,latest`) alongside the raw release files, via ORAS in CI and `just publish-oci` locally.
+- Booty HTTP boot: per-MAC serving of the UKI, DDI, `SHA256SUMS(.gpg)`, and per-host `bluefin-node.ign`, verified end to end in QEMU with Secure Boot; the Booty branch is not yet merged upstream.
+- ZFS and KubeStellar sysexts version-locked to the image, delivered in lock-step with OS updates through sysupdate features; rollback keeps the matching sysext.
 
 ## Planned work
 
@@ -32,14 +37,11 @@ Priorities are derived from [gap-analysis-distros.md](gap-analysis-distros.md).
 
 | # | Item | Rationale / source gap |
 |---|------|------------------------|
-| 1 | k0s role units (controller vs worker) and splitting the KubeStellar/Argo CD/kiosk stack into its own sysext | The k0s sysext currently carries both the runtime and the management stack; they version independently. |
-| 2 | OCI image output alongside the raw artifacts | Factory pipelines consume OCI; the release set is currently raw files only. |
-| 3 | SHA256SUMS signature verification for the diskless `rd.systemd.pull` download | The pull runs with `verify=no`; `/usr` integrity is still enforced by the pinned `usrhash=` and dm-verity, but the download stream itself is unverified. |
-| 4 | TPM2-sealed /var on installed nodes | Credential sealing exists (`tpm2-credential-sealing.md`); persistent state is not yet bound to the TPM. |
-| 5 | aarch64 build axis | `project.conf` and `include/arch.yml` already model it; no CI coverage yet. |
-| 6 | Booty HTTP-boot integration | [Booty](https://github.com/jeefy/booty) is the intended PXE/HTTP-boot server (netboot UKI + `import.pull` credential + optional `ignition.config.url`); the hand-off is documented but not yet automated. |
-| 7 | Credential provisioning smoke tests on real hardware | SSH keys, static network, and firstboot settings are wired through systemd credentials; TPM2-sealed credential decryption still needs hardware proof. |
-| 8 | Native reboot coordination for non-Kubernetes and single-node hosts | Kured only covers Kubernetes nodes; no FleetLock/locksmith equivalent. |
+| 1 | TPM2-sealed /var on installed nodes | Credential sealing exists (`tpm2-credential-sealing.md`); persistent state is not yet bound to the TPM. |
+| 2 | aarch64 build axis | `project.conf` and `include/arch.yml` already model it; no CI coverage yet. |
+| 3 | Booty merge and its Secure Boot shim story | The Bluefin HTTP-boot support works from [Booty](https://github.com/jeefy/booty) `feat/bluefin-http-boot`; it still needs to merge, and enrollment-free first boots need a shim-signed path. |
+| 4 | Credential provisioning smoke tests on real hardware | SSH keys, static network, and firstboot settings are wired through systemd credentials; TPM2-sealed credential decryption still needs hardware proof. |
+| 5 | Native reboot coordination for non-Kubernetes and single-node hosts | Kured only covers Kubernetes nodes; no FleetLock/locksmith equivalent. |
 
 ## Status notes
 

@@ -68,11 +68,12 @@ permissions:
 
 The workflow checks out and executes PR-controlled code (the `Justfile` and
 build scripts come from the PR head), so no job that runs on `pull_request`
-may hold a write token. In `build.yml`, `contents: write` is granted to exactly
+may hold a write token. In `build.yml`, write tokens are granted to exactly
 one job:
 
-- `release` — creates the GitHub Release and uploads assets; gated to
-  `refs/heads/main`.
+- `release` — creates the GitHub Release and pushes the OCI artifact; gated to
+  `refs/heads/main`. It holds `contents: write` (release) and
+  `packages: write` (ghcr.io push).
 
 Junction ref tracking must never run on `pull_request`. It used to, as a
 `track-refs` job gated on `startsWith(github.head_ref, 'renovate/')`, and a
@@ -115,9 +116,9 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 | Job | Workflow | Trigger | Purpose |
 |-----|----------|---------|---------|
 | `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
-| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, runs the full BuildStream compile (OS DDI, signed UKIs, netboot ESP, k0s and OpenZFS sysexts), and signs the release manifest on pushes to `main`. Read-only token. |
+| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there. Read-only token. |
 | `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Downloads the build job's exported image set and runs the Secure Boot QEMU checks: `scripts/dogfood-diskless.sh --check` (diskless boot) and `scripts/dogfood-install.sh` (install to disk and boot it). Read-only token. |
-| `release` | `build.yml` | `push/main`, `workflow_dispatch` | Downloads the signed assets handed off by `build` and publishes them to an immutable GitHub Release tagged `v<image-version>` (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write`. |
+| `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`) (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write` + `packages: write`. |
 | `docs` | `docs-checks.yml` | `pull_request`, `push/main` | Runs markdown and skill metadata checks via `docs-checks.py`. Read-only token. |
 | `unit` | `unit-tests.yml` | `pull_request`, `push/main` | Runs pytest and BATS unit test suites. Read-only token. |
 
@@ -135,7 +136,10 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YYYYMMDD.<run>` on main
     syncs `installer-version` to the tracked FSDK point release, and proposes the
     result as its own pull request against `main`.
  3. **Full Compilation:** Builds the OS DDI, signed UKIs, netboot ESP, and the
-    k0s and OpenZFS systemd-sysexts on every pull request and push to `main`.
+    k0s, KubeStellar, and OpenZFS systemd-sysext assets on every pull request
+    and push to `main`, and signs the combined `SHA256SUMS` inside
+    `oci/bluefin-server-image.bst` (gpg sign plus a `gpgv` proof against the
+    shipped keyring).
  4. **Boot test:** Downloads the exported image set and runs
     `scripts/dogfood-diskless.sh --check` (diskless Secure Boot boot) and
     `scripts/dogfood-install.sh` (diskless boot, `systemd-sysinstall` to disk,
@@ -143,10 +147,11 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YYYYMMDD.<run>` on main
  5. **Version Derivation:** The release version is set per build with
     `just set-version`: `YYYYMMDD.<run>` on main, `0.<run>` on pull requests so
     a PR build can never sort above a release.
- 6. **Automated Publishing:** For pushes to `main` (including Renovate PR merges),
-    GitHub Actions creates a GitHub Release, uploads all compiled assets, and
-    produces a combined `dist/release/SHA256SUMS` plus detached
-    `SHA256SUMS.gpg` for `systemd-sysupdate` verification.
+ 6. **Automated Publishing:** For pushes to `main` (including Renovate PR
+    merges), GitHub Actions publishes `dist/diskless/` as-is: an immutable
+    GitHub Release `v<image-version>` and an ORAS OCI artifact
+    `ghcr.io/<owner>/bluefin-server:<ver>,latest`. Nodes verify updates
+    against the `SHA256SUMS` / `SHA256SUMS.gpg` already in that set.
 
 ## Common Rationalizations
 
@@ -171,9 +176,11 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YYYYMMDD.<run>` on main
 - [ ] Every `install-action` `tool:` names an explicit version (`just@1.58.0`).
 - [ ] `just validate` passes after workflow changes.
 - [ ] No new mutable action refs introduced.
-- [ ] The release signing step uploads detached `.gpg` signatures for every
-      combined `SHA256SUMS` manifest.
-- [ ] The signing secret name matches the one documented in
+- [ ] Release signing happens in `oci/bluefin-server-image.bst`; there is no
+      separate CI signing step, and the release job publishes `dist/diskless/`
+      as-is (GitHub Release + OCI artifact).
+- [ ] The signing secret names (`BOOT_KEYS_TARBALL`, `SYSUPDATE_SIGNING_KEY`)
+      match the ones documented in
       `docs/skills/systemd-sysupdate-verification.md`.
 
 ## See also

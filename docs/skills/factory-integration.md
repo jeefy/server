@@ -61,7 +61,7 @@ the base /usr image (hard rule 4 forbids container runtimes in the base image).
 | Minimal attack surface / lean base OS | Verity-sealed read-only /usr with bash; optional tools as sysexts |
 | Kubernetes control plane on every node | k0s delivered as `systemd-sysext` |
 | Container workloads | `podman` (and other runtimes) as optional `systemd-sysext`s |
-| Signed, verifiable release artifacts | Signed UKIs + GPG-signed `SHA256SUMS` + `import-pubring.gpg` |
+| Signed, verifiable release artifacts | Signed UKIs + `SHA256SUMS` signed in-element, verified against `/etc/systemd/import-pubring.pgp` |
 
 ## SSH and Remote Diagnostics
 

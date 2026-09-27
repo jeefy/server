@@ -36,17 +36,33 @@ just version / just tags  # FSDK-derived point release and tag set
 
 `just export-image` writes one directory per image version containing the OS
 DDI, the sysupdate usr/usr-verity sources, both UKIs, the netboot ESP image,
-the `efi-keys/` enrollment payloads, and `SHA256SUMS`. See
+the k0s/KubeStellar/OpenZFS sysext assets, the `efi-keys/` enrollment
+payloads, and a `SHA256SUMS` over all of it with its detached signature
+`SHA256SUMS.gpg` (signed in-element by `oci/bluefin-server-image.bst`). See
 [ddi-installer.md](ddi-installer.md) for what each artifact is.
+
+To publish the set as an OCI artifact (one layer per file, tags `<version>`
+and `latest`, artifact type
+`application/vnd.projectbluefin.server.release.v1`):
+
+```bash
+just publish-oci ghcr.io/<owner>/bluefin-server                 # podman login first
+just publish-oci <registry-host>:30500/bluefin-server dist/diskless 1  # plain HTTP
+```
 
 ## Keys
 
 Every image build signs: the UKIs and systemd-boot with DB, kernel modules
-with the module signing certificate. `build-image` (and `validate`) depends on
-`gen-dev-keys`, which generates throwaway keys in `files/boot-keys/`
-(gitignored) on first run and keeps them unless `--force` is given. CI builds
-on `main` unpack the `BOOT_KEYS_TARBALL` secret instead; pull requests get
-throwaway keys and their images are never published.
+with the module signing certificate, and the release `SHA256SUMS` with the
+image signing key. `build-image` (and `validate`) depends on `gen-dev-keys`,
+which generates throwaway keys in `files/boot-keys/` (gitignored) on first
+run: PK/KEK/DB, the module certificate, and the `sysupdate-signing.asc` /
+`import-pubring.pgp` pair. Keys are kept unless `--force` is given. CI builds
+on `main` unpack the `BOOT_KEYS_TARBALL` secret, write `SYSUPDATE_SIGNING_KEY`
+to `files/boot-keys/sysupdate-signing.asc`, and copy the committed release
+keyring `files/os/sysupdate-keys/import-pubring.gpg` to
+`files/boot-keys/import-pubring.pgp`; pull requests get throwaway keys and
+their images are never published.
 
 ## Dogfood: boot it in QEMU
 
@@ -74,15 +90,28 @@ Useful environment variables:
 - `DOGFOOD_VARS=<file>` — persistent UEFI variable store (keeps enrolled keys
   across runs).
 - `DOGFOOD_BOOT=disk` — boot `DOGFOOD_STATE_DISK` instead of the netboot ESP.
+- `DOGFOOD_BOOT=http` — UEFI HTTP boot the netboot UKI; the initrd derives the
+  `/usr` image URL from the boot URL. Enrolls the Secure Boot keys from the
+  netboot ESP once per variable store first.
+- `DOGFOOD_BOOT_URL=<url>` — HTTP boot from another server (e.g. Booty)
+  instead of the built-in one.
+- `DOGFOOD_NODE_IGN=<file>` — serve it as `bluefin-node.ign` next to the UKI
+  (picked up by HTTP-booted nodes with no Ignition credential).
+- `DOGFOOD_SERVE_EXTRA=<dir>` — also serve the files in `<dir>`.
+- `DOGFOOD_TAMPER=raw|sums` — serve a corrupted DDI or a re-hashed, unsigned
+  `SHA256SUMS`; the boot must fail, proving the signature check.
 - `DOGFOOD_EXTRA_PROBE=<file>` — shell snippet appended to the in-guest probe.
 
 `scripts/dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]` is the full
 end-to-end check: install from a diskless boot, boot the installed disk,
-`systemd-sysupdate` A->B to `<next-dir>`, and with `<broken-dir>` corrupt the
-updated slot and confirm boot counting rolls the node back to `<next-dir>` on
-its own. CI runs the first two stages (`dogfood-diskless.sh --check`,
-`dogfood-install.sh dist/diskless`) as the `boot-test` job in
-`.github/workflows/build.yml` on every pull request and push to main.
+`systemd-sysupdate` A->B to `<next-dir>` with the default `Verify=yes` against
+the signed manifest (with the `zfs` feature enabled, so the ZFS sysext follows
+the OS in lock-step), and with `<broken-dir>` corrupt the updated slot and
+confirm boot counting rolls the node back to `<next-dir>` on its own, with the
+matching ZFS sysext still merged. CI runs the first two stages
+(`dogfood-diskless.sh --check`, `dogfood-install.sh dist/diskless`) as the
+`boot-test` job in `.github/workflows/build.yml` on every pull request and
+push to main.
 
 ## Local builds with a remote cache
 
@@ -101,12 +130,13 @@ projects:
 
 ## Release automation
 
-`.github/workflows/build.yml` runs `just validate`, exports the image set and
-both sysexts, runs the QEMU boot test, and on `main` assembles
-`dist/release/`, signs the combined `SHA256SUMS` with the
-`SYSUPDATE_SIGNING_KEY` secret, and publishes an immutable GitHub Release
-tagged `v<image-version>`. One version is published exactly once; creating an
-existing tag fails rather than overwriting assets nodes may already trust.
+`.github/workflows/build.yml` runs `just validate`, exports the image set
+(already carrying its signed `SHA256SUMS(.gpg)`), runs the QEMU boot test, and
+on `main` publishes `dist/diskless/` as-is: an immutable GitHub Release tagged
+`v<image-version>` plus an ORAS OCI artifact at
+`ghcr.io/<owner>/bluefin-server:<ver>,latest`. One version is published
+exactly once; creating an existing tag fails rather than overwriting assets
+nodes may already trust.
 
 ## Common rationalizations
 
@@ -132,7 +162,8 @@ existing tag fails rather than overwriting assets nodes may already trust.
 - [ ] `just validate` resolves the BuildStream graph without errors.
 - [ ] `just dogfood-check` passes.
 - [ ] `just dogfood-install NEXT=<dir>` passes when changing install or update logic.
-- [ ] Exported `dist/diskless/` contains the OS DDI, both UKIs, the netboot ESP, `efi-keys/`, and `SHA256SUMS`.
+- [ ] Exported `dist/diskless/` contains the OS DDI, both UKIs, the netboot
+      ESP, the sysext assets, `efi-keys/`, `SHA256SUMS`, and `SHA256SUMS.gpg`.
 
 ## See also
 

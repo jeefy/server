@@ -37,8 +37,15 @@ GPT partition label with room to spare):
 | `bluefin-server-<ver>.efi` | Disk UKI (installed nodes); also the sysupdate source for `$BOOT`. |
 | `bluefin-server-netboot_<ver>.efi` | Netboot UKI (diskless nodes); the UEFI HTTP boot / PXE target. |
 | `bluefin-server-netboot_<ver>.esp.raw` | Netboot ESP image: signed systemd-boot, the netboot UKI, and Secure Boot key enrollment payloads. Write it to a USB stick to boot diskless without HTTP boot. |
+| `zfs_<ver>.raw.zst` / `kubestellar_<ver>.raw.zst` | Opt-in sysext assets locked to this image version; installed nodes fetch them through the `zfs` / `kubestellar` sysupdate features. |
+| `k0s-<k0s-ver>.raw.zst` | Opt-in k0s sysext asset, on its own version axis. |
 | `efi-keys/` | PK/KEK/db enrollment payloads. |
-| `SHA256SUMS` | Checksums for everything above. |
+| `SHA256SUMS` / `SHA256SUMS.gpg` | One manifest over every file above, signed in-element with `files/boot-keys/sysupdate-signing.asc`; the image trusts the matching `import-pubring.pgp` (see `systemd-sysupdate-verification.md`). |
+
+A release is this directory published as-is: a GitHub Release `v<ver>` plus an
+ORAS OCI artifact `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per
+file, artifact type `application/vnd.projectbluefin.server.release.v1`).
+`just publish-oci REF [DIR] [PLAIN_HTTP]` pushes the same artifact locally.
 
 The /usr image itself is built by `oci/bluefin-server-usr.bst` with an offline
 `systemd-repart`: an erofs partition (`bluefin_usr_<ver>`) plus its dm-verity
@@ -57,7 +64,9 @@ is always on. `os-sd-boot-signed.bst` signs systemd-boot with the same DB key
 so installed disks and the netboot ESP get a loader firmware accepts.
 
 Dev keys come from `just gen-dev-keys` (throwaway keys in the gitignored
-`files/boot-keys/`); CI builds on main use the `BOOT_KEYS_TARBALL` secret.
+`files/boot-keys/`, including the `sysupdate-signing.asc` /
+`import-pubring.pgp` pair that signs and verifies `SHA256SUMS`); CI builds on
+main use the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets.
 
 ### Diskless (netboot UKI)
 
@@ -71,12 +80,28 @@ firmware -> signed systemd-boot -> bluefin-server-netboot_<ver>.efi
 
 The pull source is the UEFI HTTP boot origin (`bootorigin:`) or the
 `import.pull` system credential (SMBIOS type 11, QEMU fw_cfg, or ESP
-`/loader/credentials`). The pull runs with `verify=no`; integrity is still
-enforced end to end because the signed UKI pins `usrhash=` and dm-verity
-checks every `/usr` block against it. A failed boot never drops to an
+`/loader/credentials`). The pull runs with `verify=signature`: the initrd
+ships gnupg and the image keyring, and importd fetches `SHA256SUMS` and
+`SHA256SUMS.gpg` from the image's directory and checks the signature before
+using the manifest. The manifest hash check pins the DDI, the signed UKI pins
+`usrhash=`, and dm-verity checks every `/usr` block against it; a tampered DDI
+or a re-hashed unsigned manifest is refused. A failed boot never drops to an
 emergency shell: the initrd prints the errors and reboots
 (`files/initrd/usr/lib/systemd/system/emergency.service.d/10-reboot.conf`),
 which is what lets boot counting work unattended.
+
+### UEFI HTTP boot
+
+With UEFI HTTP boot the firmware fetches `bluefin-server-netboot_<ver>.efi`
+directly from the boot server; no systemd-boot runs. systemd-stub records the
+boot URL in the `StubDeviceURL` EFI variable, and the initrd derives the URL
+of `bluefin-server_<ver>.raw` (and of `SHA256SUMS` / `SHA256SUMS.gpg`) from
+the same directory. `bluefin-ignition-credentials` also uses it: with no
+`ignition.config` / `ignition.config.url` credential it HEADs
+`bluefin-node.ign` next to the UKI and applies it through `config.replace`
+when present. Because HTTP boot skips systemd-boot's key enrollment, the
+firmware must already trust the image DB key; `scripts/dogfood-diskless.sh`
+with `DOGFOOD_BOOT=http` enrolls once from the netboot ESP first.
 
 ### Installed disk (disk UKI)
 
@@ -119,13 +144,21 @@ Installed nodes update with `systemd-sysupdate` against the transfers in
   usr-verity slot (matched by `bluefin_usr_@v` partition labels).
 - `20-uki.transfer` installs the new disk UKI into `/EFI/Linux` with boot
   counting (`TriesLeft=3`, at most 2 UKIs kept).
+- `30-zfs.transfer` and `31-kubestellar.transfer` are optional **features**
+  (enabled with `updatectl enable zfs` or a drop-in
+  `/etc/sysupdate.d/zfs.feature.d/enable.conf` with `[Feature] Enabled=true`).
+  When enabled, the matching sysext is downloaded with every OS update into
+  `/var/lib/extensions` (two versions kept, `ProtectVersion=%A`); systemd-sysext
+  merges only the one matching the booted image, so a boot-counted rollback
+  keeps ZFS.
 
 Sources are the release assets on GitHub Releases, verified against the
-GPG-signed `SHA256SUMS` (see `systemd-sysupdate-verification.md`). After an
-update the node reboots into slot B; if the new image fails its three tries,
-systemd-boot rolls back to slot A on its own. A Kured hook
-(`files/os/systemd/systemd-sysupdate.service.d/kured-hook.conf`) touches
-`/run/reboot-required` for cluster-aware reboot coordination.
+GPG-signed `SHA256SUMS` with `Verify=yes` (see
+`systemd-sysupdate-verification.md`). After an update the node reboots into
+slot B; if the new image fails its three tries, systemd-boot rolls back to
+slot A on its own. A Kured hook
+(`files/os/systemd/system/systemd-sysupdate.service.d/kured-hook.conf`)
+touches `/run/reboot-required` for cluster-aware reboot coordination.
 
 Diskless nodes have no slots, so `systemd-sysupdate.service` is disabled when
 booted diskless
@@ -146,18 +179,27 @@ signed UKI, the `ignition.config.url=` karg cannot be used; configs arrive as
   fetched once the network is online.
 
 `bluefin-ignition-credentials` stages whichever is set into
-`/run/ignition/user.ign`; every Ignition unit is conditioned on those
-credentials, so a node booted without them runs none of it. Ignition runs on
-**every** boot (there is no first-boot marker on a tmpfs root), so configs
-must be idempotent. See `tests/fixtures/ignition/var-on-disk.ign` for a
-dogfood-tested example (persistent /var on a second disk plus an SSH key).
+`/run/ignition/user.ign`; the downstream Ignition units are conditioned on
+that file, so a node with no config runs none of it. A UEFI HTTP-booted node
+needs no credential: the script reads the boot URL from the `StubDeviceURL`
+EFI variable and, when the server offers `bluefin-node.ign` next to the UKI,
+applies it. Ignition runs on **every** boot (there is no first-boot marker on
+a tmpfs root), so configs must be idempotent. See
+`tests/fixtures/ignition/var-on-disk.ign` for a dogfood-tested example
+(persistent /var on a second disk plus an SSH key).
 
 ## PXE / HTTP boot service
 
-The intended network boot server is [Booty](https://github.com/jeefy/booty):
-hand it the netboot UKI plus an `import.pull` credential (or serve the UKI as
-the UEFI HTTP boot origin) and optionally an `ignition.config.url` credential
-per node. Without Booty, writing `bluefin-server-netboot_<ver>.esp.raw` to a
+The intended network boot server is [Booty](https://github.com/jeefy/booty).
+Its `feat/bluefin-http-boot` work (not yet merged) syncs `v<ver>` releases
+from GitHub Releases or from the OCI artifact (`--bluefinOCI`, `--plain-http`
+for plain-HTTP registries), checks the signature with `--bluefinKeyring`,
+answers ProxyDHCP with an `HTTPClient` offer pointing at
+`http://<booty>/bluefin/<mac>/bluefin-server-netboot.efi`, and serves the UKI,
+the OS DDI, `SHA256SUMS(.gpg)`, and a per-host `bluefin-node.ign` (hostname,
+SSH keys, state disk, extensions, k0s token). Its `doInstall` flag boots the
+node into `booty-install.service`, which runs `systemd-sysinstall` against the
+local disk. Without Booty, writing `bluefin-server-netboot_<ver>.esp.raw` to a
 USB stick boots a node diskless the same way.
 
 ## Common Rationalizations
@@ -168,8 +210,8 @@ USB stick boots a node diskless the same way.
 | "Hardcode `root=/dev/vda2` for QEMU." | Bare metal has different device names. Boot and root selection uses discoverable partition labels and verity-derived UUIDs. |
 | "Kernel image is at `/boot/vmlinuz`." | FSDK installs kernels into `/usr/lib/modules/<kver>/vmlinuz`; `bluefin-server-boot.bst` picks it up from there for ukify. |
 | "The initrd needs dracut." | The initrd is a hand-assembled systemd userspace (`initrd-stack.bst`) packed as newc cpio + zstd. No dracut anywhere in the tree. |
-| "`verify=no` means the download is untrusted." | The signed UKI pins `usrhash=`; dm-verity verifies every `/usr` block read from the pulled image. Transport tampering can only cause a failed boot, which reboots. |
-| "Ignition needs a karg." | The cmdline is sealed in the signed UKI. Ignition configs arrive as `ignition.config` / `ignition.config.url` system credentials. |
+| "The diskless pull is unverified." | The initrd pulls with `verify=signature` against the keyring it ships; the signed UKI also pins `usrhash=`, and dm-verity checks every `/usr` block read. |
+| "Ignition needs a karg." | The cmdline is sealed in the signed UKI. Ignition configs arrive as `ignition.config` / `ignition.config.url` system credentials, or as `bluefin-node.ign` next to the UKI on a UEFI HTTP boot. |
 | "Diskless nodes need sysupdate." | Diskless nodes update by rebooting into a newer image; sysupdate is disabled when booted diskless. |
 
 ## Verification

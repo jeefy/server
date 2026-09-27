@@ -14,17 +14,17 @@ It is [DDI first](https://0pointer.net/blog/fitting-everything-together.html) an
 ## Release status: Alpha
 
 Bluefin Server is currently in **Alpha**:
-- **Trust model**: every boot is Secure Boot verified end to end (signed systemd-boot, signed UKIs, dm-verity `/usr` pinned by `usrhash=` on the locked kernel command line). Releases publish a GPG-signed `SHA256SUMS` manifest for `systemd-sysupdate`.
+- **Trust model**: every boot is Secure Boot verified end to end (signed systemd-boot, signed UKIs, dm-verity `/usr` pinned by `usrhash=` on the locked kernel command line). The release set carries a GPG-signed `SHA256SUMS` manifest that both `systemd-sysupdate` and the diskless pull verify.
 - **Suitability**: Alpha builds are intended for evaluation, testing, and factory validation. Not yet recommended for production workloads.
 - **Readiness roadmap**: Track completed criteria and remaining gates toward 1.0 in [`docs/MVP_1_0_READINESS.md`](docs/MVP_1_0_READINESS.md).
 
 ## What it is
 
-- **Diskless-first boot** — the netboot UKI pulls `bluefin-server_<ver>.raw` into RAM with `rd.systemd.pull`, mounts a dm-verity erofs `/usr`, and runs from tmpfs. A diskless node updates by rebooting into a newer image.
+- **Diskless-first boot** — the netboot UKI pulls `bluefin-server_<ver>.raw` into RAM with `rd.systemd.pull`, verified against the signed `SHA256SUMS` (`verify=signature`), mounts a dm-verity erofs `/usr`, and runs from tmpfs. A diskless node updates by rebooting into a newer image.
 - **Optional disk install with A/B rollback** — a running diskless node *is* the installer: `systemd-sysinstall --definitions=/run/bluefin/boot/bluefin/repart.d` copies `/usr` into slot A. The first disk boot creates slot B and a persistent xfs root. `systemd-sysupdate` fills the inactive slot, and UKI boot counting rolls back a failed update automatically.
-- **Secure Boot on** — signed systemd-boot, signed UKIs, signed kernel modules, `lockdown=integrity`.
-- **Opt-in per-node state via Ignition** — pass an `ignition.config` / `ignition.config.url` system credential and Ignition runs in the initrd on every boot; configs must be idempotent.
-- **Opt-in sysexts** — k0s (Kubernetes) and OpenZFS ship as separate `systemd-sysext` images, never in the base `/usr`.
+- **Secure Boot on** — signed systemd-boot, signed UKIs, signed kernel modules, `lockdown=integrity`. UEFI HTTP boot is supported; [Booty](https://github.com/jeefy/booty) serves the UKI, the OS DDI, the signed manifest, and a per-node `bluefin-node.ign`.
+- **Opt-in per-node state via Ignition** — pass an `ignition.config` / `ignition.config.url` system credential (or, on UEFI HTTP boot, a `bluefin-node.ign` next to the UKI) and Ignition runs in the initrd on every boot; configs must be idempotent.
+- **Opt-in sysexts** — k0s (Kubernetes), KubeStellar, and OpenZFS ship as separate `systemd-sysext` images, never in the base `/usr`. ZFS and KubeStellar are version-locked to the image and follow OS updates through optional sysupdate features.
 
 > **Remote diagnostics:** OpenSSH is installed for on-demand diagnostics, but is disabled by default via systemd presets. It can be started manually with `systemctl start sshd` when remote access is needed. See [`docs/skills/factory-integration.md`](docs/skills/factory-integration.md).
 
@@ -39,6 +39,10 @@ just dogfood-check   # headless QEMU diskless boot with Secure Boot
 just dogfood-install # diskless boot, install to disk, boot it (QEMU)
 ```
 
+For network boot at scale, [Booty](https://github.com/jeefy/booty) syncs a
+release (from GitHub or the OCI artifact) and HTTP-boots nodes with per-host
+Ignition and optional `doInstall` to disk.
+
 See [`AGENTS.md`](AGENTS.md) for the full build command matrix, hard rules, and agent skill routing.
 
 ## Contributing
@@ -48,8 +52,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the contributor checklist, Conventi
 ## Security and release trust
 
 - **Signed boot chain**: Secure Boot keys enroll from the ESP on first boot (`secure-boot-enroll if-safe`); local builds use throwaway keys from `just gen-dev-keys`.
-- **Signed manifests**: GitHub Actions builds all release artifacts, generates a combined `SHA256SUMS` manifest, and signs it with GPG before publishing to GitHub Releases.
-- **Sysupdate verification**: Installed nodes verify updates against the signed manifest; see [`docs/skills/systemd-sysupdate-verification.md`](docs/skills/systemd-sysupdate-verification.md) for details.
+- **Signed manifests**: the build signs one combined `SHA256SUMS` over the whole image set (OS images, UKIs, sysexts) inside `oci/bluefin-server-image.bst`; a release publishes `dist/diskless/` as-is to GitHub Releases and as an OCI artifact.
+- **Sysupdate verification**: installed nodes verify updates against the signed manifest (`Verify=yes`), and the diskless pull checks the same signature in the initrd; see [`docs/skills/systemd-sysupdate-verification.md`](docs/skills/systemd-sysupdate-verification.md) for details.
 - **Vulnerability disclosure**: See [`SECURITY.md`](SECURITY.md) for policy details and how to report security issues.
 
 ## License
