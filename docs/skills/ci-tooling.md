@@ -4,7 +4,7 @@ description: CI workflow conventions for Bluefin Server. Use when writing or edi
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-08"
+  last_updated: "2026-09-27"
   context7-sources:
     - /websites/github_en_actions
     - /websites/cli_github_manual
@@ -53,9 +53,9 @@ a binary chosen by an upstream release rather than by a commit in this repo.
     tool: just@1.58.0
 ```
 
-The version is repeated at each call site — currently `build.yml` (two jobs),
-`kernel.yml` and `unit-tests.yml`. Bumping `just` means changing all of them in
-one commit, so CI never runs two versions at once.
+The version is repeated at each call site — currently `build.yml`,
+`unit-tests.yml`, and `track-junctions.yml`. Bumping `just` means changing all
+of them in one commit, so CI never runs two versions at once.
 
 ### Workflow permissions
 
@@ -114,36 +114,39 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 
 | Job | Workflow | Trigger | Purpose |
 |-----|----------|---------|---------|
-| `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `release-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
-| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, runs the full BuildStream compile (including Flatcar LTS Kernel & ZFS), and signs the release manifest on pushes to `main`. Read-only token. |
-| `installer-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Downloads the build job's exported installer/PXE artifact and calls the shared `projectbluefin/actions` QEMU workflow. No Lima or second BuildStream build. |
-| `release` | `build.yml` | `push/main`, `workflow_dispatch` | Downloads the signed assets handed off by `build` and publishes them to the GitHub Release (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write`. |
-| `build-kernel` | `kernel.yml` | `pull_request` (paths: `elements/flatcar/**`, `include/flatcar.yml`, `patches/flatcar-kernel/**`), `push/main`, `workflow_dispatch` | Standalone kernel & OpenZFS sysext BuildStream build and export. Emits `dist/kernel/` artifacts. Read-only token. |
+| `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
+| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, runs the full BuildStream compile (OS DDI, signed UKIs, netboot ESP, k0s and OpenZFS sysexts), and signs the release manifest on pushes to `main`. Read-only token. |
+| `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Downloads the build job's exported image set and runs the Secure Boot QEMU checks: `scripts/dogfood-diskless.sh --check` (diskless boot) and `scripts/dogfood-install.sh` (install to disk and boot it). Read-only token. |
+| `release` | `build.yml` | `push/main`, `workflow_dispatch` | Downloads the signed assets handed off by `build` and publishes them to an immutable GitHub Release tagged `v<image-version>` (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write`. |
 | `docs` | `docs-checks.yml` | `pull_request`, `push/main` | Runs markdown and skill metadata checks via `docs-checks.py`. Read-only token. |
 | `unit` | `unit-tests.yml` | `pull_request`, `push/main` | Runs pytest and BATS unit test suites. Read-only token. |
 
 GitHub Actions runs the **complete BuildStream compilation pipeline** using `/mnt`
 SSD storage on the runner for podman and BuildStream caches. Release assets are
-uploaded to a GitHub Release tagged `installer-v<FSDK-RELEASE>`.
+uploaded to a GitHub Release tagged `v<image-version>` (`YYYYMMDD.<run>` on main).
 
 ## Core Process
 
 1. **Renovate tracking:** `renovate.json` is configured with a custom regex
    manager to scan BuildStream junction files (`freedesktop-sdk.bst` and
    `gnome-build-meta.bst`) using the `git-refs` datasource.
-2. **Auto-resolution:** The scheduled `track-junctions` workflow executes
-   `just bst source track` to resolve raw tags to full `git-describe` refs,
-   syncs `release-version` to the tracked FSDK point release, and proposes the
-   result as its own pull request against `main`.
-3. **Full Compilation:** Builds the standalone DDI OS image, live installer, and
-   k0s systemd-sysext on every pull request and push to `main`.
-4. **Installer boot test:** Uploads the already-built installer and PXE artifacts and calls `projectbluefin/actions/.github/workflows/server-installer-test.yml`. The shared workflow prepares QEMU/KVM and runs this repository's `just test-installer-artifact`, which defaults to the USB/firmware boot path and consumes only the raw installer image; the uploaded PXE pair is exercised by `just test-installer-boot-pxe` (`INSTALLER_BOOT_MODE=pxe`). Lima remains local-only.
-5. **Version Derivation:** The release tag is derived with `just version`, which
-   parses the pinned FSDK point release from `elements/freedesktop-sdk.bst`.
-6. **Automated Publishing:** For pushes to `main` (including Renovate PR merges),
-   GitHub Actions creates a GitHub Release, uploads all compiled assets, and
-   produces a combined `dist/release/SHA256SUMS` plus detached
-   `SHA256SUMS.gpg` for `systemd-sysupdate` verification.
+ 2. **Auto-resolution:** The scheduled `track-junctions` workflow executes
+    `just bst source track` to resolve raw tags to full `git-describe` refs,
+    syncs `installer-version` to the tracked FSDK point release, and proposes the
+    result as its own pull request against `main`.
+ 3. **Full Compilation:** Builds the OS DDI, signed UKIs, netboot ESP, and the
+    k0s and OpenZFS systemd-sysexts on every pull request and push to `main`.
+ 4. **Boot test:** Downloads the exported image set and runs
+    `scripts/dogfood-diskless.sh --check` (diskless Secure Boot boot) and
+    `scripts/dogfood-install.sh` (diskless boot, `systemd-sysinstall` to disk,
+    boot the installed disk) in QEMU with OVMF.
+ 5. **Version Derivation:** The release version is set per build with
+    `just set-version`: `YYYYMMDD.<run>` on main, `0.<run>` on pull requests so
+    a PR build can never sort above a release.
+ 6. **Automated Publishing:** For pushes to `main` (including Renovate PR merges),
+    GitHub Actions creates a GitHub Release, uploads all compiled assets, and
+    produces a combined `dist/release/SHA256SUMS` plus detached
+    `SHA256SUMS.gpg` for `systemd-sysupdate` verification.
 
 ## Common Rationalizations
 

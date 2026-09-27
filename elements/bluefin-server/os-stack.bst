@@ -25,6 +25,9 @@ depends:
   # OpenZFS sysext update configuration (opt-in: systemd-sysupdate --component=zfs)
   - bluefin-server/os-zfs-sysupdate.bst
 
+  # KubeStellar/Argo CD/kiosk sysext update configuration (opt-in, needs k0s)
+  - bluefin-server/os-kubestellar-sysupdate.bst
+
   # Wired DHCP configuration for the installed OS
   - bluefin-server/os-networkd.bst
 

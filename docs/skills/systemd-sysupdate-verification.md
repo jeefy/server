@@ -4,7 +4,7 @@ description: Configure and operate GPG signature verification for Bluefin Server
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-07"
+  last_updated: "2026-09-27"
   context7-sources:
     - /systemd/systemd
 ---
@@ -16,8 +16,8 @@ the OS image.
 
 ## When to Use
 
-- Modifying `files/os/sysupdate.d/*.transfer` or
-  `files/os/sysupdate.k0s.d/*.transfer` update definitions.
+- Modifying `files/os/sysupdate.d/*.transfer` or the component transfer
+  directories (`files/os/sysupdate.k0s.d/`, `files/os/sysupdate.zfs.d/`).
 - Rotating or replacing the release signing key.
 - Debugging `systemd-sysupdate` failures related to `SHA256SUMS.gpg` verification.
 
@@ -48,12 +48,14 @@ Key facts from `sysupdate.d(5)`:
 
 ## Current implementation status
 
-The current tree uses a single root/ESP slot and a single signed manifest flow
-for OTA delivery. Root and UKI transfers live in `sysupdate.d`; the optional
-k0s sysext lives in the `k0s` component directory and is selected with
-`systemd-sysupdate --component=k0s update`. Future work on dual-slot root
-partitions, dual UKIs, and broader rollback strategies is tracked in
-[architecture-roadmap.md](architecture-roadmap.md).
+Installed nodes carry A/B usr and usr-verity slots plus matching UKIs. The usr
+and usr-verity transfers live in `sysupdate.d` and fill the inactive slot; the
+UKI transfer installs the new disk UKI into `/EFI/Linux` with boot counting
+(`TriesLeft=3`), so a failed image rolls back to the previous slot on its own.
+The optional k0s and OpenZFS sysexts live in their own component directories
+(`files/os/sysupdate.k0s.d/`, `files/os/sysupdate.zfs.d/`) and are selected
+with `systemd-sysupdate --component=k0s update` / `--component=zfs update`. Diskless nodes update by rebooting into a newer
+image; `systemd-sysupdate.service` is disabled when booted diskless.
 
 ## Repository Layout
 
@@ -65,10 +67,11 @@ partitions, dual UKIs, and broader rollback strategies is tracked in
   signs it with the `SYSUPDATE_SIGNING_KEY` repository secret, producing
   `dist/release/SHA256SUMS.gpg`, and uploads `dist/release/*` to the GitHub
   Release.
-- `files/os/sysupdate.d/*.transfer` and
-  `files/os/sysupdate.k0s.d/*.transfer` — each transfer points its static
-  `Path=` at `https://github.com/projectbluefin/server/releases/latest/download/`
-  so all transfers share the same signed manifest.
+- `files/os/sysupdate.d/*.transfer` and the component directories
+  (`files/os/sysupdate.k0s.d/`, `files/os/sysupdate.zfs.d/`) — each transfer
+  points its static `Path=` at
+  `https://github.com/projectbluefin/server/releases/latest/download/` so all
+  transfers share the same signed manifest.
 
 ## Rotating the Signing Key
 
@@ -109,10 +112,11 @@ partitions, dual UKIs, and broader rollback strategies is tracked in
   and therefore the same `SHA256SUMS` file. Signing separate manifests per
   asset type and uploading them all as `SHA256SUMS` causes collisions on the
   release page and breaks sysupdate.
-- **Local export manifests are not release manifests.** `just export-installer`,
-  `just export-ddi`, and `just export-sysext` each write a `SHA256SUMS` in
-  `dist/`, `dist/ddi/`, and `dist/sysext/` for local verification. Only the
-  combined `dist/release/SHA256SUMS` is uploaded and used by `systemd-sysupdate`.
+- **Local export manifests are not release manifests.** `just export-image`,
+  `just export-sysext`, and `just export-zfs-sysext` each write a `SHA256SUMS`
+  in `dist/diskless/` and `dist/sysext/` for local verification. Only the
+  combined `dist/release/SHA256SUMS` is uploaded and used by
+  `systemd-sysupdate`.
 - **`Verify=` belongs to `[Transfer]`, not `[Source]`.** Use it only in local
   scratch copies for structural testing.
 - **Testing the trust chain locally.** In a Fedora container
@@ -126,8 +130,8 @@ partitions, dual UKIs, and broader rollback strategies is tracked in
 
 ## Verification
 
-- [ ] `files/os/sysupdate.d/*.transfer` and
-      `files/os/sysupdate.k0s.d/*.transfer` do not contain `Verify=no`.
+- [ ] `files/os/sysupdate.d/*.transfer` and the component transfer
+      directories do not contain `Verify=no`.
 - [ ] `elements/bluefin-server/os-stack.bst` includes
       `bluefin-server/os-sysupdate-keys.bst`.
 - [ ] `files/os/sysupdate-keys/import-pubring.gpg` exists and contains the
@@ -136,9 +140,8 @@ partitions, dual UKIs, and broader rollback strategies is tracked in
 - [ ] CI generates and signs exactly one combined `dist/release/SHA256SUMS`
       manifest, producing `dist/release/SHA256SUMS.gpg`.
 - [ ] CI uploads `dist/release/*` to the GitHub Release.
-- [ ] Every transfer in `files/os/sysupdate.d/*.transfer` and
-      `files/os/sysupdate.k0s.d/*.transfer` uses a static `Path=` with no
-      `@v` placeholder.
+- [ ] Every transfer in `files/os/sysupdate.d/*.transfer` and the component
+      directories uses a static `Path=` with no `@v` placeholder.
 - [ ] Every transfer uses `@v` only inside `MatchPattern=`.
 
 ## See also

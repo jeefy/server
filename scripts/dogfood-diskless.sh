@@ -104,6 +104,7 @@ After=multi-user.target
 [Service]
 Type=oneshot
 ImportCredential=dogfood.probe
+TimeoutStartSec=infinity
 StandardOutput=tty
 StandardError=tty
 TTYPath=/dev/ttyS0

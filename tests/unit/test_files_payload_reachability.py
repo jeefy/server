@@ -148,7 +148,7 @@ def test_every_payload_file_is_staged_or_declared():
         "files/ paths reach no image and are not declared host tooling:\n  "
         + "\n  ".join(orphans)
         + "\n\nStage them with a kind: local source on an element that "
-        "os-stack.bst, installer-stack.bst, or an oci/ target depends on; or "
+        "os-stack.bst, an initrd stack, or an oci/ target depends on; or "
         "add them to HOST_TOOLING if they are host-side only."
     )
 

@@ -4,7 +4,7 @@ description: Extensibility via systemd-sysext and systemd-confext for Bluefin Se
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-07"
+  last_updated: "2026-09-27"
   context7-sources:
     - /systemd/systemd
 ---
@@ -40,25 +40,35 @@ Placing an empty directory named like the extension (without `.raw`) under
 `/etc/extensions/` masks an extension of the same name in a lower-precedence
 directory.
 
-## Flatcar Bakery Compatibility
+## Extension identity and version matching
 
-The base OS `/usr/lib/os-release` mimics Flatcar (`ID=flatcar` and a matching
-`VERSION_ID`), which lets the host load pre-compiled extensions from the Flatcar
-System Extension Bakery as long as the extension's `extension-release` metadata
-matches the host `ID=` (or uses `ID=_any`).
+The base OS `/usr/lib/os-release` identifies as `ID=bluefin-server` with
+`VERSION_ID=<image-version>` (`elements/bluefin-server/os-release.bst`). A
+sysext merges when its `extension-release` metadata matches the host `ID=` (or
+uses `ID=_any`) and, when it pins `VERSION_ID=`, the host version.
 
-If the extension enforces `VERSION_ID=` matching, the Flatcar major-version line
-must match the value baked into `elements/bluefin-server/os-release-flatcar.bst`.
+The two first-party extensions make opposite choices:
 
-## Adding an extension from the Flatcar Bakery
+- **k0s** (`files/k0s/sysext/extension-release.k0s`) uses `ID=_any` and does
+  not pin the image version, so it merges on any host image.
+- **OpenZFS** (`files/zfs/sysext/extension-release.zfs`) pins
+  `ID=bluefin-server` and `VERSION_ID=<image-version>`, because its kernel
+  modules only load on the exact kernel they were built against. The asset
+  name (`zfs-<zfs-version>-<image-version>.raw`) carries the image version so
+  `systemd-sysupdate --component=zfs` sees a new version for every image build.
 
-The k0s sysext is the built-in example, but any Flatcar-compatible extension can
-be layered the same way.
+Third-party extensions built for another distribution (for example the Flatcar
+System Extension Bakery) only merge with `systemd-sysext merge --force`, and
+only if they are pure userspace.
+
+## Adding an extension
+
+The k0s sysext is the built-in example; a compatible extension layers the same
+way.
 
 ```bash
 # Download an extension image to the persistence directory
-wget https://bakery.flatcar-linux.org/extensions/htop/htop-latest.raw \
-  -O /var/lib/extensions/htop.raw
+wget <extension-url> -O /var/lib/extensions/myext.raw
 
 # Merge it into the running system
 systemd-sysext merge
@@ -80,7 +90,7 @@ The `systemd-sysext.service` unit performs a refresh at boot, so extensions in
 ## Removing an extension
 
 ```bash
-rm /var/lib/extensions/htop.raw
+rm /var/lib/extensions/myext.raw
 systemd-sysext refresh
 ```
 

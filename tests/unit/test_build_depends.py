@@ -89,22 +89,6 @@ def test_os_stack_uses_fsdk_base():
         )
 
 
-def test_installer_stack_includes_uutils_and_dbus():
-    """Installer stack must include uutils-coreutils, dbus, and dbus-broker."""
-    installer_stack = ELEMENTS_DIR / "installer" / "installer-stack.bst"
-    data = yaml.safe_load(installer_stack.read_text(encoding="utf-8"))
-    depends = data.get("depends", [])
-
-    assert "bluefin-server/uutils-coreutils.bst" in depends, (
-        "installer-stack.bst must include bluefin-server/uutils-coreutils.bst"
-    )
-    assert "freedesktop-sdk.bst:components/dbus.bst" in depends, (
-        "installer-stack.bst must include freedesktop-sdk.bst:components/dbus.bst for dbus.socket"
-    )
-    assert "freedesktop-sdk.bst:components/dbus-broker.bst" in depends, (
-        "installer-stack.bst must include freedesktop-sdk.bst:components/dbus-broker.bst"
-    )
-
 
 def test_os_countme_depends_on_curl_and_jq():
     """os-countme.bst must ship curl and jq through the freedesktop-sdk junction.
@@ -128,43 +112,4 @@ def test_os_countme_depends_on_curl_and_jq():
         "os-countme.bst must include freedesktop-sdk.bst:components/jq.bst "
         "(projectbluefin/server#96)"
     )
-
-
-def test_installer_linker_paths_split_host_and_target():
-    """Target-root ld.so.conf write and read must resolve to the same file.
-
-    projectbluefin/server#132 (hanthor review): `ldconfig -r /target-root` chroots
-    into /target-root, so the `-f /tmp/ld.so.conf` path is resolved *post-chroot* to
-    /target-root/tmp/ld.so.conf. The conf is therefore written to /target-root/tmp/
-    and read back via `-f /tmp/ld.so.conf`; the two must agree, not live on different
-    roots. The target cache indexes Flatcar's /usr/lib64 (the FSDK libs ship there,
-    not the Debian multiarch path).
-    """
-    installer = ELEMENTS_DIR / "oci" / "bluefin-server-installer.bst"
-    text = installer.read_text(encoding="utf-8")
-
-    # Target linker search path (what the target-root cache indexes).
-    assert "/usr/lib64\\n/usr/lib64/systemd\\n" in text, (
-        "installer must index Flatcar /usr/lib64 for the target-root cache "
-        "(projectbluefin/server#132)"
-    )
-    # Conf written to /target-root/tmp and read via `-f /tmp/ld.so.conf` under
-    # `-r /target-root` (which resolves to /target-root/tmp/ld.so.conf post-chroot).
-    assert "> /target-root/tmp/ld.so.conf" in text, (
-        "installer must write the target ld.so.conf to /target-root/tmp, matching "
-        "the `ldconfig -r /target-root -f /tmp/ld.so.conf` read "
-        "(projectbluefin/server#132)"
-    )
-    assert "ldconfig -r /target-root -f /tmp/ld.so.conf" in text, (
-        "installer must read the target conf from /tmp with `-r /target-root "
-        "(projectbluefin/server#132)"
-    )
-    # Cleanup removes the same post-chroot path it wrote.
-    assert "rm -f /target-root/tmp/ld.so.conf" in text, (
-        "installer must clean up /target-root/tmp/ld.so.conf "
-        "(projectbluefin/server#132)"
-    )
-
-
-
 

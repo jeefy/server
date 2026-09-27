@@ -88,7 +88,7 @@ jobs:
       - name: Build and export the image set
         run: just export-image
 
-      - name: Build and export the k0s and OpenZFS sysexts
+      - name: Build and export the k0s, KubeStellar and OpenZFS sysexts
         run: |
           just export-sysext
           just export-zfs-sysext
@@ -110,7 +110,7 @@ jobs:
           mkdir -p dist/release
           cp dist/diskless/bluefin-server_*.raw dist/diskless/bluefin-server-*.efi dist/release/
           cp dist/diskless/bluefin-server-netboot_*.esp.raw dist/release/
-          cp dist/sysext/k0s-*.raw.zst dist/sysext/zfs-*.raw.zst dist/release/
+          cp dist/sysext/k0s-*.raw.zst dist/sysext/kubestellar-*.raw.zst dist/sysext/zfs-*.raw.zst dist/release/
           (cd dist/release && sha256sum --binary -- * > SHA256SUMS)
           GNUPGHOME=$(mktemp -d)
           export GNUPGHOME
