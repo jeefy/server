@@ -25,11 +25,19 @@ bst *ARGS:
     export CONTAINERS_CONF="${CONTAINERS_CONF:-/dev/null}"
     export CONTAINERS_CONF_OVERRIDE="${CONTAINERS_CONF_OVERRIDE:-/dev/null}"
     mkdir -p "${HOME}/.cache/buildstream"
+    # On systemd-resolved hosts /etc/resolv.conf may name a stub or VPN
+    # resolver that only the host's NSS path can use; hand the container the
+    # real upstream list instead.
+    resolv_args=()
+    if [ -s /run/systemd/resolve/resolv.conf ]; then
+        resolv_args=(-v /run/systemd/resolve/resolv.conf:/etc/resolv.conf:ro)
+    fi
     # shellcheck disable=SC2086
     {{sudo_cmd}} podman run --rm \
         --privileged \
         --device /dev/fuse \
         --network=host \
+        "${resolv_args[@]}" \
         -v "{{justfile_directory()}}:/src:rw" \
         -v "${HOME}/.cache/buildstream:/root/.cache/buildstream:rw" \
         -w /src \
@@ -182,6 +190,41 @@ export-sysext: build-sysext
     cp dist/sysext-checkout/SHA256SUMS dist/sysext/
     rm -rf dist/sysext-checkout
     @echo "==> wrote k0s sysext:" && ls -lh dist/sysext/
+
+# -- Diskless /usr image + signed boot chain ----------------------------------
+
+# Generate local Secure Boot + module signing keys in files/boot-keys/.
+[group('diskless')]
+gen-dev-keys *ARGS:
+    bash scripts/gen-dev-keys.sh {{ARGS}}
+
+# Build the /usr DDI, signed UKI, signed systemd-boot and netboot ESP.
+[group('diskless')]
+build-diskless: gen-dev-keys
+    just bst build oci/bluefin-server-boot.bst
+
+# Export the diskless artifacts to dist/diskless/.
+[group('diskless')]
+export-diskless: build-diskless
+    rm -rf dist/diskless
+    mkdir -p dist/diskless
+    just bst artifact checkout oci/bluefin-server-usr.bst --directory /src/dist/diskless/usr
+    just bst artifact checkout oci/bluefin-server-boot.bst --directory /src/dist/diskless/boot
+    mv dist/diskless/usr/*.raw dist/diskless/usr/*.usrhash dist/diskless/
+    mv dist/diskless/boot/*.efi dist/diskless/boot/*.esp.raw dist/diskless/boot/efi-keys dist/diskless/
+    cat dist/diskless/usr/SHA256SUMS dist/diskless/boot/SHA256SUMS > dist/diskless/SHA256SUMS
+    rm -rf dist/diskless/usr dist/diskless/boot
+    @echo "==> wrote diskless artifacts:" && ls -lh dist/diskless/
+
+# Boot dist/diskless/ in QEMU with Secure Boot, pulling /usr over HTTP.
+[group('diskless')]
+dogfood:
+    bash scripts/dogfood-diskless.sh dist/diskless
+
+# Headless dogfood boot; passes once the node reaches multi-user.target.
+[group('diskless')]
+dogfood-check:
+    bash scripts/dogfood-diskless.sh dist/diskless --check
 
 # -- Flatcar LTS kernel & ZFS --------------------------------------------------
 # Build the Flatcar LTS kernel and ZFS sysext.

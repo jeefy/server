@@ -47,11 +47,12 @@ def test_manual_and_script_elements_depend_on_base_stack():
             )
 
 
-def test_compose_elements_set_integrate_false():
-    """Ensure compose elements set integrate: False to avoid invoking nonexistent /bin/sh.
+def test_compose_elements_declare_integration_explicitly():
+    """Compose elements must say whether integration commands run.
 
-    In FSDK 26.08, shell-less or minimal target images fail if BuildStream attempts
-    to execute integration scripts in the composed sandbox.
+    Shell-less compositions must set integrate: False (FSDK 26.08
+    runtime-minimal has no /bin/sh). Compositions that ship a shell and need
+    integration (the ld.so cache, hwdb) opt in with integrate: True.
     """
     for bst_path in ELEMENTS_DIR.rglob("*.bst"):
         if bst_path.name in ("freedesktop-sdk.bst", "gnome-build-meta.bst"):
@@ -66,77 +67,25 @@ def test_compose_elements_set_integrate_false():
             continue
 
         config = data.get("config", {})
-        assert config.get("integrate") is False, (
+        assert config.get("integrate") in (True, False), (
             f"{bst_path.relative_to(REPO_ROOT)} is kind: compose but does not set "
-            f"'integrate: False' in config"
+            f"'integrate:' explicitly in config"
         )
 
 
-def test_os_stack_uses_flatcar_base():
-    """Bluefin Server OS payload now lands on the Flatcar `/usr` base.
-
-    projectbluefin/server#131 cut os-stack.bst over to flatcar/flatcar-usr.bst
-    and deleted the displaced FSDK base-runtime components. The OS payload must
-    depend on flatcar-usr.bst and must NOT pull the FSDK base userspace it
-    replaced (the uutils-coreutils overlay, GNU runtime-minimal, etc.). The
-    installer keeps its own FSDK userspace (see test_installer_stack_...).
-    """
+def test_os_stack_uses_fsdk_base():
+    """The OS payload is pure freedesktop-sdk: os-base.bst, no Flatcar imports."""
     os_stack = ELEMENTS_DIR / "bluefin-server" / "os-stack.bst"
-    data = yaml.safe_load(os_stack.read_text(encoding="utf-8"))
-    depends = data.get("depends", [])
+    depends = yaml.safe_load(os_stack.read_text(encoding="utf-8")).get("depends", [])
+    os_base = ELEMENTS_DIR / "bluefin-server" / "os-base.bst"
+    base_depends = yaml.safe_load(os_base.read_text(encoding="utf-8")).get("depends", [])
 
-    assert "flatcar/flatcar-usr.bst" in depends, (
-        "os-stack.bst must depend on flatcar/flatcar-usr.bst (projectbluefin/server#131)"
-    )
-    assert "bluefin-server/uutils-coreutils.bst" not in depends, (
-        "os-stack.bst must no longer ship the uutils-coreutils overlay; "
-        "Flatcar `/usr` provides coreutils (projectbluefin/server#131)"
-    )
-    assert "freedesktop-sdk.bst:public-stacks/runtime-gnu.bst" not in depends, (
-        "os-stack.bst must NOT depend on GNU userspace (runtime-gnu.bst)"
-    )
-    for displaced in (
-        "freedesktop-sdk.bst:public-stacks/runtime-minimal.bst",
-        "freedesktop-sdk.bst:components/systemd.bst",
-        "freedesktop-sdk.bst:components/dbus.bst",
-        "freedesktop-sdk.bst:components/dbus-broker.bst",
-        "freedesktop-sdk.bst:components/kmod.bst",
-        "freedesktop-sdk.bst:components/shadow.bst",
-        "freedesktop-sdk.bst:bootstrap/bash.bst",
-        "freedesktop-sdk.bst:components/openssh-systemd.bst",
-        "freedesktop-sdk.bst:components/podman.bst",
-        "freedesktop-sdk.bst:components/xfsprogs.bst",
-        "freedesktop-sdk.bst:components/gnupg.bst",
-        "freedesktop-sdk.bst:components/ca-certificates.bst",
-        "freedesktop-sdk.bst:components/tzdata.bst",
-        "bluefin-server/linux-firmware-split.bst",
-    ):
-        assert displaced not in depends, (
-            f"os-stack.bst must no longer depend on {displaced} "
-            "(projectbluefin/server#131)"
-        )
-
-
-def test_os_stack_userspace_comes_from_flatcar():
-    """dbus, dbus-broker, and bash now come from Flatcar `/usr`, not FSDK components.
-
-    projectbluefin/server#131 removed the FSDK dbus, dbus-broker, and
-    bootstrap/bash entries from os-stack.bst; flatcar/flatcar-usr.bst provides
-    them as part of the single-ABI Flatcar userspace. This test pins that the
-    old FSDK base-runtime entries are gone so a stray re-add is caught.
-    """
-    os_stack = ELEMENTS_DIR / "bluefin-server" / "os-stack.bst"
-    data = yaml.safe_load(os_stack.read_text(encoding="utf-8"))
-    depends = data.get("depends", [])
-
-    for removed in (
-        "freedesktop-sdk.bst:components/dbus.bst",
-        "freedesktop-sdk.bst:components/dbus-broker.bst",
-        "freedesktop-sdk.bst:bootstrap/bash.bst",
-    ):
-        assert removed not in depends, (
-            f"os-stack.bst must no longer depend on {removed}; "
-            "Flatcar `/usr` provides it (projectbluefin/server#131)"
+    assert "bluefin-server/os-base.bst" in depends
+    assert "freedesktop-sdk.bst:components/systemd.bst" in base_depends
+    assert "bluefin-server/kernel-modules.bst" in base_depends
+    for dep in depends + base_depends:
+        assert not dep.startswith("flatcar/"), (
+            f"OS payload must not import Flatcar binaries ({dep})"
         )
 
 

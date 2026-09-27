@@ -108,11 +108,8 @@ def test_k0s_first_boot_retries_until_controller_starts() -> None:
     assert "ConditionFirstBoot" not in service
 
 
-def test_k0s_first_boot_is_packaged_and_enabled() -> None:
-    assert (
-        PRESET.read_text(encoding="utf-8")
-        == "enable k0s-first-boot.service\n"
-    )
+def test_k0s_first_boot_is_packaged_but_opt_in() -> None:
+    assert not PRESET.exists(), "k0s is opt-in: no preset may enable k0s-first-boot"
     assert "path: files/os/systemd/system" in ELEMENT.read_text(encoding="utf-8")
     assert "target: /usr/lib/systemd/system" in ELEMENT.read_text(encoding="utf-8")
     assert (
