@@ -20,7 +20,7 @@ PRESET = (
     / "os"
     / "systemd"
     / "system-preset"
-    / "20-bluefin-k0s-first-boot.preset"
+    / "80-bluefin-k0s-first-boot.preset"
 )
 NETWORK = ROOT / "files" / "os" / "systemd" / "network" / "20-wired.network"
 NETWORK_PRESET = (
@@ -29,7 +29,7 @@ NETWORK_PRESET = (
     / "os"
     / "systemd"
     / "system-preset"
-    / "20-bluefin-networkd.preset"
+    / "80-bluefin-networkd.preset"
 )
 ELEMENT = ROOT / "elements" / "bluefin-server" / "os-k0s-first-boot.bst"
 NETWORK_ELEMENT = ROOT / "elements" / "bluefin-server" / "os-networkd.bst"
@@ -105,7 +105,7 @@ def test_k0s_first_boot_retries_until_controller_starts() -> None:
 
 def test_k0s_first_boot_is_packaged_but_opt_in() -> None:
     assert not PRESET.exists(), "k0s is opt-in: no preset may enable k0s-first-boot"
-    opt_in = PRESET.parent / "20-bluefin-opt-in.preset"
+    opt_in = PRESET.parent / "80-bluefin-opt-in.preset"
     lines = opt_in.read_text(encoding="utf-8").splitlines()
     assert "disable k0s-first-boot.service" in lines, (
         "FSDK has no 'disable *' default, so the unit must be disabled explicitly"
@@ -145,19 +145,20 @@ def test_k0s_sysupdate_transfer_is_packaged_as_a_component() -> None:
     )
 
 
-def test_presets_sort_before_flatcar_disable_all() -> None:
-    # Flatcar's /usr ships /usr/lib/systemd/system-preset/99-default.preset
-    # containing a catch-all "disable *". systemd applies preset files in
-    # lexicographic filename order and the first matching line wins, so any
-    # Bluefin preset named after 99-default.preset is silently ignored at
-    # first-boot preset-all.
+def test_presets_sort_between_ignition_and_fsdk_defaults() -> None:
+    # systemd reads preset files from every directory in filename order and
+    # the first matching line wins. Ignition enables units through
+    # /etc/systemd/system-preset/20-ignition.preset, so a vendor preset that
+    # sorts before it (e.g. 20-bluefin-sshd.preset: "disable sshd.service")
+    # silently overrides a node config's `enabled: true`. Vendor presets must
+    # still sort before FSDK's 90-systemd.preset to take effect at all.
     preset_dir = PRESET.parent
     presets = sorted(p.name for p in preset_dir.glob("*.preset"))
     assert presets, f"no presets found in {preset_dir}"
     for name in presets:
-        assert name < "99-default.preset", (
-            f"{name} sorts after Flatcar's 99-default.preset; its "
-            "'disable *' catch-all would win and the preset would be ignored"
+        assert "20-ignition.preset" < name < "90-systemd.preset", (
+            f"{name} must sort after 20-ignition.preset (so Ignition can "
+            "enable units Bluefin disables) and before 90-systemd.preset"
         )
 
 

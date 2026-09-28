@@ -28,7 +28,7 @@ Bluefin Server ships two separate, opt-in sysexts:
 ## Enabling k0s on a host
 
 `k0s-first-boot.service` is **not enabled by default**; the preset
-`20-bluefin-opt-in.preset` disables it and its fetcher. To opt in:
+`80-bluefin-opt-in.preset` disables it and its fetcher. To opt in:
 
 ```bash
 # 1. Place the k0s sysext image at /var/lib/k0s/k0s.raw, or let the fetcher

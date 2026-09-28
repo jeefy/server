@@ -57,7 +57,7 @@ Design choices:
 - **Identity.** The extension uses `ID=_any` in its release metadata so it
   merges on any host image.
 - **Opt-in activation.** `k0s-first-boot.service` is explicitly disabled in
-  `20-bluefin-opt-in.preset`. An operator opts in by placing `k0s.raw` at
+  `80-bluefin-opt-in.preset`. An operator opts in by placing `k0s.raw` at
   `/var/lib/k0s/k0s.raw` (or letting `k0s-first-boot-fetch.service` run
   `sysupdate --component=k0s`) and then running
   `systemctl enable --now k0s-first-boot.service`. The unit copies the image to
@@ -81,7 +81,7 @@ Design choices:
 | `files/os/sysupdate.k0s.d/70-k0s.transfer` | sysupdate transfer track for the k0s sysext component. |
 | `files/os/systemd/system/k0s-first-boot.service` | One-shot unit that merges the k0s sysext and starts the correct role. |
 | `files/os/systemd/system/k0s-first-boot-fetch.service` | Fetches the k0s sysext via sysupdate when `/var/lib/k0s/k0s.raw` is missing. |
-| `files/os/systemd/system-preset/20-bluefin-opt-in.preset` | Disables `k0s-first-boot.service` and `k0s-first-boot-fetch.service` by default. |
+| `files/os/systemd/system-preset/80-bluefin-opt-in.preset` | Disables `k0s-first-boot.service` and `k0s-first-boot-fetch.service` by default. |
 | `Justfile` | `build-sysext` / `export-sysext` targets. |
 | `.github/workflows/build.yml` | Builds, signs, and publishes sysext assets. |
 | `.github/scripts/check-k0s-version.py` | Fails closed if any consumer restates the k0s version instead of deriving it. |
