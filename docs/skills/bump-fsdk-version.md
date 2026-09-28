@@ -22,7 +22,7 @@ There is no application version for these images. Two version axes exist:
   fails closed on drift between the two.
 - `image-version` in `include/image.yml` is the per-build OS version shared by
   the usr DDI, the UKIs, and sysupdate transfers. CI sets it with
-  `just set-version` (`YYYYMMDD.<run>` on main, `0.<run>` on PRs);
+  `just set-version` (`YY.MM.<run>` on main, `0.<run>` on PRs);
   `systemd-sysupdate` orders it with `strverscmp()`, so keep it monotonic and
   at most 17 characters.
 

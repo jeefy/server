@@ -27,7 +27,7 @@ metadata:
 
 `oci/bluefin-server-image.bst` produces every release artifact for one
 `image-version` (`include/image.yml`, set per build by `just set-version`,
-`YYYYMMDD.<run>` on main, `0.<run>` on PRs, at most 17 characters so it fits a
+`YY.MM.<run>` on main, `0.<run>` on PRs, at most 17 characters so it fits a
 GPT partition label with room to spare):
 
 | Artifact | Role |
@@ -127,7 +127,9 @@ with slot A's UUIDs pinned to the usrhash derivation by
 
 ```bash
 systemctl start run-bluefin-boot.mount
-systemd-sysinstall --definitions=/run/bluefin/boot/bluefin/repart.d /dev/sdX
+kernel="$(ls /run/bluefin/boot/EFI/Linux/bluefin-server-[0-9]*.efi)"
+systemd-sysinstall --kernel="${kernel}" \
+    --definitions=/run/bluefin/boot/bluefin/repart.d /dev/sdX
 ```
 
 `systemd-sysinstall` writes the ESP and slot A and links the disk UKI; the

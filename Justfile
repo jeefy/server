@@ -122,7 +122,7 @@ export-image OUT="dist/diskless": build-image
     @echo "==> wrote image artifacts:" && ls -lh {{OUT}}/
 
 # Set the image version in include/image.yml; it must increase under
-# strverscmp() (CI uses YYYYMMDD.<run number>).
+# strverscmp() (CI uses YY.MM.<run number>).
 [group('diskless')]
 set-version VERSION:
     #!/usr/bin/env bash

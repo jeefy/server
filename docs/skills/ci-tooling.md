@@ -124,7 +124,7 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 
 GitHub Actions runs the **complete BuildStream compilation pipeline** using `/mnt`
 SSD storage on the runner for podman and BuildStream caches. Release assets are
-uploaded to a GitHub Release tagged `v<image-version>` (`YYYYMMDD.<run>` on main).
+uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
 
 ## Core Process
 
@@ -145,7 +145,7 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YYYYMMDD.<run>` on main
     `scripts/dogfood-install.sh` (diskless boot, `systemd-sysinstall` to disk,
     boot the installed disk) in QEMU with OVMF.
  5. **Version Derivation:** The release version is set per build with
-    `just set-version`: `YYYYMMDD.<run>` on main, `0.<run>` on pull requests so
+    `just set-version`: `YY.MM.<run>` on main, `0.<run>` on pull requests so
     a PR build can never sort above a release.
  6. **Automated Publishing:** For pushes to `main` (including Renovate PR
     merges), GitHub Actions publishes `dist/diskless/` as-is: an immutable

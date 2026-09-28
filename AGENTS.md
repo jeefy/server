@@ -23,7 +23,7 @@ A release publishes `dist/diskless/` as-is: a GitHub Release `v<ver>` and an ORA
 
 ## Hard rules
 
-1. The OS composes from FSDK components via BuildStream. No Flatcar or other-distro binaries.
+1. The OS composes from FSDK components via BuildStream. No Flatcar or other-distro binaries. Never use `platform.bst`.
 2. Keep the CPU baseline broad: no `x86_64_v3`.
 3. Installation stays `systemd-sysinstall`-native and `systemd-repart`-based; no shell installers or non-native installer scripts.
 4. Kubernetes, ZFS, and container runtimes ship only as opt-in `systemd-sysext` images, never in the base /usr, and no preset enables them.
