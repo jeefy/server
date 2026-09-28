@@ -73,6 +73,7 @@ variables:
     systemd.verity_usr_hash=/dev/disk/by-loop-ref/rootdisk.raw-part2
     systemd.default_device_timeout_sec=300
     rd.systemd.mask=systemd-repart.service systemd.mask=systemd-repart.service
+    systemd.mask=boot.automount systemd.mask=boot.mount
   disk-cmdline: >-
     rw
     rd.systemd.mask=systemd-networkd-wait-online.service

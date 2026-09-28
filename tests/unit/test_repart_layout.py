@@ -99,3 +99,15 @@ def test_boot_element_pins_slot_a_uuids_for_sysinstall():
     assert "cp /repart/usr/lib/repart.d/*.conf" in text
     assert '>> "${d}/20-usr-a.conf"' in text
     assert '>> "${d}/21-usr-verity-a.conf"' in text
+
+
+def test_netboot_does_not_automount_the_in_ram_esp():
+    # On a diskless boot the gpt-auto generator finds the ESP through the
+    # block device backing /usr. After systemd-sysext merges an extension
+    # /usr is an overlay, the regenerated boot.mount disappears, and the
+    # orphaned boot.automount hangs systemd-boot-update.service (seen on
+    # legacy BIOS netboot, where no EFI loader variable names the ESP).
+    netboot = BOOT_ELEMENT.read_text(encoding="utf-8").split("netboot-cmdline:")[1]
+    netboot = netboot.split("disk-cmdline:")[0]
+    assert "systemd.mask=boot.automount" in netboot
+    assert "systemd.mask=boot.mount" in netboot
