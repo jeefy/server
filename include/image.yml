@@ -1,4 +1,4 @@
 variables:
   # Image version shared by the usr DDI, the UKI, and sysupdate transfers.
   # sysupdate orders versions with strverscmp(), so keep it monotonic.
-  image-version: "2026.09.1"
+  image-version: "2026.09.2"
