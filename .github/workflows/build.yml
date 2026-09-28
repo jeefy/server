@@ -53,6 +53,17 @@ jobs:
             fi
             mkdir -p files/boot-keys
             echo "${BOOT_KEYS_TARBALL}" | base64 -d | tar -xz -C files/boot-keys
+            # Validate key layout per scripts/gen-dev-keys.sh
+            for f in PK.key PK.crt KEK.key KEK.crt DB.key DB.crt linux-module-cert.key modules/linux-module-cert.crt; do
+              if [ ! -s "files/boot-keys/${f}" ]; then
+                echo "Missing or empty expected key file: files/boot-keys/${f}" >&2
+                exit 1
+              fi
+            done
+            if [ -e files/boot-keys/modules/linux-module-cert.key ]; then
+              echo "Security violation: private linux-module-cert.key must not reside in modules/" >&2
+              exit 1
+            fi
             printf '%s\n' "${SYSUPDATE_SIGNING_KEY}" > files/boot-keys/sysupdate-signing.asc
             cp files/os/sysupdate-keys/import-pubring.gpg files/boot-keys/import-pubring.pgp
           else

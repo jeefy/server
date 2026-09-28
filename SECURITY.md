@@ -40,7 +40,7 @@ release, update before reporting — the issue may already be fixed.
 ## Verifying Release Artifacts
 
 Every GitHub Release contains a single combined `SHA256SUMS` manifest and its
-detached, ASCII-armored GPG signature `SHA256SUMS.gpg`, produced by the
+detached GPG signature `SHA256SUMS.gpg`, produced by the
 `build.yml` workflow. Verify a downloaded artifact set with the public
 keyring shipped in this repository:
 

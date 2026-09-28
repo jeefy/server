@@ -202,7 +202,9 @@ the OS DDI, `SHA256SUMS(.gpg)`, and a per-host `bluefin-node.ign` (hostname,
 SSH keys, state disk, extensions, k0s token). Its `doInstall` flag boots the
 node into `booty-install.service`, which runs `systemd-sysinstall` against the
 local disk. Without Booty, writing `bluefin-server-netboot_<ver>.esp.raw` to a
-USB stick boots a node diskless the same way.
+USB stick boots a node diskless the same way, provided an `import.pull.cred`
+credential is placed in `/loader/credentials/import.pull.cred` on the stick
+specifying the URL to pull `bluefin-server_<ver>.raw` and its signed SHA256SUMS.
 
 ## Common Rationalizations
 

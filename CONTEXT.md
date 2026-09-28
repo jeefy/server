@@ -9,7 +9,7 @@ The discoverable disk image (`bluefin-server_<ver>.raw`) carrying the `/usr` ero
 _Avoid_: base image, OS rootfs, root tarball
 
 **Installer**:
-Not separate media. Boot a node diskless, then run `systemd-sysinstall --kernel=$(ls /run/bluefin/boot/EFI/Linux/bluefin-server-[0-9]*.efi) --definitions=/run/bluefin/boot/bluefin/repart.d` against a target disk; it block-copies `/usr` from the running image and installs the disk UKI.
+Not separate media. Boot a node diskless, then run `systemd-sysinstall` (with `--kernel` and `--definitions`, see `ddi-installer.md`) against a target disk; it block-copies `/usr` from the running image and installs the disk UKI.
 _Avoid_: live ISO, installation media, setup script
 
 **Netboot UKI**:
