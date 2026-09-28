@@ -70,6 +70,7 @@ def test_sysupdate_directories_are_populated():
         "20-uki.transfer",
         "30-zfs.transfer",
         "31-kubestellar.transfer",
+        "32-kubeadm.transfer",
     ]
     assert k0s == ["70-k0s.transfer"]
 

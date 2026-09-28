@@ -30,6 +30,7 @@ This is the lazy-load routing table for agent skills. Keep this file in memory w
 | [`ddi-installer.md`](ddi-installer.md) | Boot flow, diskless pull, `systemd-sysinstall`, A/B sysupdate | Boot, install, and update architecture. |
 | [`factory-integration.md`](factory-integration.md) | Lab integration, boot-test workflow, factory role | How Bluefin Server is consumed by the CI lab. |
 | [`gap-analysis-distros.md`](gap-analysis-distros.md) | Comparing Bluefin Server to other server OSes | Source-verified comparison to Ubuntu, Talos, Flatcar, FCOS. |
+| [`kubeadm-sysext.md`](kubeadm-sysext.md) | Joining a kubeadm cluster, kubelet/containerd sysext, Kubernetes kernel options | Build and runtime contract for the kubeadm worker sysext. |
 | [`k0s-sysext-ops.md`](k0s-sysext-ops.md) | Operating k0s or the KubeStellar appliance on Bluefin Server | Runtime operation and troubleshooting for the k0s and KubeStellar sysexts. |
 | [`k0s-sysext.md`](k0s-sysext.md) | Building the k0s sysext | BuildStream element and publish steps for the k0s sysext. |
 | [`skill-improvement.md`](skill-improvement.md) | Adding, splitting, or refactoring skills | Meta-skill that owns the documentation loop. |

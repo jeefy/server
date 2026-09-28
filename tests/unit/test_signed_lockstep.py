@@ -37,7 +37,7 @@ def test_keyring_is_installed_where_systemd_reads_it_first() -> None:
     assert "freedesktop-sdk.bst:components/gnupg.bst" in initrd
 
 
-@pytest.mark.parametrize("name,transfer", [("zfs", "30-zfs.transfer"), ("kubestellar", "31-kubestellar.transfer")])
+@pytest.mark.parametrize("name,transfer", [("zfs", "30-zfs.transfer"), ("kubestellar", "31-kubestellar.transfer"), ("kubeadm", "32-kubeadm.transfer")])
 def test_version_locked_sysexts_are_optional_features(name: str, transfer: str) -> None:
     feature = ini(SYSUPDATE / f"{name}.feature")["Feature"]
     assert feature.get("Enabled", "false") == "false", "features are opt-in"
@@ -48,7 +48,7 @@ def test_version_locked_sysexts_are_optional_features(name: str, transfer: str) 
     assert t["Target"]["MatchPattern"] == f"{name}_@v.raw"
 
 
-@pytest.mark.parametrize("element,name", [("zfs-sysext.bst", "zfs"), ("kubestellar-sysext.bst", "kubestellar")])
+@pytest.mark.parametrize("element,name", [("zfs-sysext.bst", "zfs"), ("kubestellar-sysext.bst", "kubestellar"), ("kubeadm-sysext.bst", "kubeadm")])
 def test_extension_release_name_carries_the_image_version(element: str, name: str) -> None:
     text = (ROOT / "elements" / "oci" / element).read_text(encoding="utf-8")
     assert f"extension-release.{name}_%{{image-version}}" in text

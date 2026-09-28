@@ -18,7 +18,7 @@ description: |
                                            UKI + key enrollment; write it to a USB
                                            stick to boot diskless without HTTP boot
     efi-keys/                              Secure Boot enrollment payloads
-    zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst
+    zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst, kubeadm_<ver>.raw.zst
                                            opt-in sysexts locked to this image version
     k0s-<k0s-ver>.raw.zst                  opt-in k0s sysext (own version axis)
     SHA256SUMS, SHA256SUMS.gpg             manifest of all of the above, signed with
@@ -54,6 +54,9 @@ build-depends:
 - filename: oci/zfs-sysext.bst
   config:
     location: /sysext/zfs
+- filename: oci/kubeadm-sysext.bst
+  config:
+    location: /sysext/kubeadm
 
 variables:
   image-name: bluefin-server_%{image-version}
@@ -115,7 +118,8 @@ config:
   - |
     set -eu
     cp /sysext/k0s/k0s-*.raw.zst /sysext/kubestellar/kubestellar_%{image-version}.raw.zst \
-       /sysext/zfs/zfs_%{image-version}.raw.zst "%{install-root}/"
+       /sysext/zfs/zfs_%{image-version}.raw.zst \
+       /sysext/kubeadm/kubeadm_%{image-version}.raw.zst "%{install-root}/"
 
   - |
     set -eu
