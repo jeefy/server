@@ -36,4 +36,7 @@ depends:
 - freedesktop-sdk.bst:components/e2fsprogs.bst
 - freedesktop-sdk.bst:components/dosfstools.bst
 
+# iSCSI initiator (iscsiadm, iscsid; socket-activated) for iSCSI CSI volumes.
+- freedesktop-sdk.bst:components/open-iscsi.bst
+
 - bluefin-server/kernel-modules.bst

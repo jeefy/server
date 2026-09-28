@@ -83,10 +83,19 @@ and `INET_DIAG_DESTROY` (socket-LB termination). The rest of Cilium's and
 kubeadm's system-validator lists is already in FSDK's config. These are base
 image options; modules are signed by `bluefin-server/kernel-modules.bst`.
 
+## iSCSI
+
+The base image (not this sysext) ships FSDK's open-iscsi: `/usr/bin/iscsiadm`
+and `iscsid`, with `iscsid.socket` enabled by `80-bluefin-iscsi.preset` so
+iscsid starts on first use. `iscsid.service` requires `iscsi-init.service`,
+which writes `/etc/iscsi/initiatorname.iscsi` only if absent (a fresh name per
+diskless boot; an Ignition-written file wins). `iscsi.service` auto-login is
+off. `/etc/iscsi/iscsid.conf` comes from the factory `/etc`
+(`30-bluefin-iscsi.conf` restores it and creates `/var/lib/iscsi`), which is
+what democratic-csi's `chroot /host ... iscsiadm` node plugin needs.
+
 ## Known gaps
 
-- iSCSI userspace (`iscsiadm`/`iscsid`) is not shipped; the `iscsi_tcp` module
-  exists, but iSCSI CSI volumes cannot attach on these nodes.
 - x86_64 only (amd64 release binaries).
 
 ## Verify
