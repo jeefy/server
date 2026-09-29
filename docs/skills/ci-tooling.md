@@ -115,7 +115,7 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 
 | Job | Workflow | Trigger | Purpose |
 |-----|----------|---------|---------|
-| `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
+| `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` junction ref, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
 | `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there. Read-only token. |
 | `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Downloads the build job's exported image set and runs the Secure Boot QEMU checks: `scripts/dogfood-diskless.sh --check` (diskless boot) and `scripts/dogfood-install.sh` (install to disk and boot it). Read-only token. |
 | `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`) (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write` + `packages: write`. |
@@ -129,8 +129,8 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
 ## Core Process
 
 1. **Renovate tracking:** `renovate.json` is configured with a custom regex
-   manager to scan BuildStream junction files (`freedesktop-sdk.bst` and
-   `gnome-build-meta.bst`) using the `git-refs` datasource.
+   manager to scan the BuildStream junction (`freedesktop-sdk.bst`) using the
+   `git-refs` datasource.
  2. **Auto-resolution:** The scheduled `track-junctions` workflow executes
     `just bst source track` to resolve raw tags to full `git-describe` refs,
     syncs `installer-version` to the tracked FSDK point release, and proposes the
