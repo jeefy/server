@@ -230,7 +230,11 @@ UNIT
     </dev/null >/dev/null 2>&1 &
 qemu_pid=$!
 probe_done() { grep -aq 'PROBE failed=' "${work}/probe.log" 2>/dev/null; }
-refused() { sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "${work}/serial.log" 2>/dev/null | grep -aqE "${refusal_re}"; }
+# Console output interleaves CSI, OSC and DCS escape sequences, sometimes in the
+# middle of a line (the initrd's failure summary writes to the console while
+# systemd-importd logs), so strip all three before matching.
+clean_log() { sed -E 's/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g; s/\x1bP[^\x1b]*\x1b\\//g; s/\x1b\[[0-9;?]*[a-zA-Z]//g' | tr -d '\r'; }
+refused() { clean_log < "${work}/serial.log" 2>/dev/null | grep -aqE "${refusal_re}"; }
 status=1
 if [ -n "${tamper}" ]; then
     stop() { probe_done || refused; }
@@ -241,7 +245,7 @@ wait_for "${timeout_s}" "${qemu_pid}" stop && status=0
 kill "${qemu_pid}" 2>/dev/null || true
 wait "${qemu_pid}" 2>/dev/null || true
 cat "${work}/serial.log" "${work}/probe.log" 2>/dev/null \
-    | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\x1bP[^\x1b]*\x1b\\//g' | tr -d '\r' > "${dir}/dogfood-serial.log"
+    | clean_log > "${dir}/dogfood-serial.log"
 grep -a 'GET ' "${work}/http.log" > "${dir}/dogfood-http.log" || true
 grep -aoE 'PROBE[ -].*' "${dir}/dogfood-serial.log" || true
 
