@@ -26,8 +26,10 @@
 #   DOGFOOD_BOOT_URL=<url>     HTTP boot from another server (e.g. Booty) instead
 #   DOGFOOD_NODE_IGN=<file>    serve it as bluefin-node.ign next to the UKI (HTTP boot)
 #   DOGFOOD_SERVE_EXTRA=<dir>  also serve the files in <dir>
-#   DOGFOOD_TAMPER=raw|sums    serve a corrupted image or a re-hashed, unsigned manifest;
-#                              --check then passes only if the initrd refuses it
+#   DOGFOOD_TAMPER=raw|sums    serve a corrupted image (raw), or a corrupted image with
+#                              SHA256SUMS re-hashed to match it but no longer matching
+#                              SHA256SUMS.gpg (sums); --check then passes only if the
+#                              initrd's pull refuses it for that reason
 set -euo pipefail
 
 dir="$(realpath "${1:?usage: $0 <artifact dir> [--check]}")"
@@ -56,7 +58,12 @@ vars_tmpl="${OVMF_VARS:-$(first_existing \
 work="$(mktemp -d /tmp/bluefin-dogfood.XXXXXX)"
 # Never leave a guest behind: an orphaned QEMU keeps its port and the caller's
 # locks. Only kill PIDs that are set; `kill 0` signals the whole process group.
-trap 'for p in ${qemu_pid:-} ${enroll_pid:-} ${http_pid:-}; do kill "${p}" 2>/dev/null || true; done; rm -rf "${work}"' EXIT
+cleanup() {
+    local pid
+    for pid in ${qemu_pid:-} ${enroll_pid:-} ${http_pid:-}; do kill "${pid}" 2>/dev/null || true; done
+    rm -rf "${work}"
+}
+trap cleanup EXIT
 vars="${DOGFOOD_VARS:-${work}/vars.fd}"
 [ -f "${vars}" ] || cp "${vars_tmpl}" "${vars}"
 cp "${esp}" "${work}/esp.raw"
@@ -68,13 +75,23 @@ mkdir -p "${srv}"
 for f in "${dir}"/*; do ln -s "${f}" "${srv}/"; done
 [ -n "${DOGFOOD_NODE_IGN:-}" ] && cp "${DOGFOOD_NODE_IGN}" "${srv}/bluefin-node.ign"
 if [ -n "${DOGFOOD_SERVE_EXTRA:-}" ]; then for f in "${DOGFOOD_SERVE_EXTRA}"/*; do ln -sf "$(realpath "${f}")" "${srv}/"; done; fi
+image_re="${image//./\\.}"
 case "${DOGFOOD_TAMPER:-}" in
-    raw)
+    raw|sums)
         rm "${srv}/${image}"; cp "${dir}/${image}" "${srv}/${image}"
-        printf 'X' | dd of="${srv}/${image}" bs=1 seek=4096 conv=notrunc status=none ;;
+        printf 'X' | dd of="${srv}/${image}" bs=1 seek=4096 conv=notrunc status=none ;;&
+    raw)
+        refusal_re="DOWNLOAD INVALID: Checksum of ${image_re} file did not check out" ;;
     sums)
+        # What an attacker without the signing key can do: make the manifest
+        # match the modified image. Only the signature check can catch it.
         rm "${srv}/SHA256SUMS"
-        sed 's/^[0-9a-f]\{8\}/deadbeef/' "${dir}/SHA256SUMS" > "${srv}/SHA256SUMS" ;;
+        sum="$(sha256sum "${srv}/${image}" | cut -d' ' -f1)"
+        sed -E "s/^[0-9a-f]{64}( [ *]${image_re})$/${sum}\1/" "${dir}/SHA256SUMS" > "${srv}/SHA256SUMS"
+        grep -q "^${sum} " "${srv}/SHA256SUMS" || { echo "ERROR: ${image} not in SHA256SUMS" >&2; exit 1; }
+        refusal_re="DOWNLOAD INVALID: Signature verification failed" ;;
+    '') ;;
+    *) echo "ERROR: DOGFOOD_TAMPER must be raw or sums" >&2; exit 1 ;;
 esac
 (cd "${srv}" && exec python3 -m http.server --bind 127.0.0.1 "${port}" >"${work}/http.log" 2>&1) &
 http_pid=$!
@@ -144,9 +161,13 @@ fi
 tamper="${DOGFOOD_TAMPER:-}"
 if [ -n "${tamper}" ]; then
     # The initrd's console shows only that the download unit failed; copy the
-    # pull's own messages there so the log names why the image was refused.
-    printf '[Service]\nStandardOutput=journal+console\nStandardError=journal+console\n' > "${work}/import-console.conf"
-    qemu+=(-smbios "$(cred systemd.unit-dropin.systemd-import@.service "${work}/import-console.conf")")
+    # pull's own messages (from the unit and from systemd-importd, which runs
+    # the transfer) there so the log names why the image was refused. systemd
+    # tools log natively to the journal when they can, bypassing the stream
+    # journald forwards, so make them write to stderr.
+    printf '[Service]\nEnvironment=SYSTEMD_LOG_TARGET=console\nStandardOutput=journal+console\nStandardError=journal+console\n' > "${work}/import-console.conf"
+    qemu+=(-smbios "$(cred systemd.unit-dropin.systemd-import@.service "${work}/import-console.conf")"
+           -smbios "$(cred systemd.unit-dropin.systemd-importd.service "${work}/import-console.conf")")
 fi
 
 echo "Serving ${dir} on :${port}; ${boot} boot of ${ver} (Secure Boot)"
@@ -196,7 +217,6 @@ UNIT
 qemu_pid=$!
 probe_done() { grep -aq 'PROBE failed=' "${work}/probe.log" 2>/dev/null; }
 refused() { sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "${work}/serial.log" 2>/dev/null | grep -aqE "${refusal_re}"; }
-refusal_re='Failed to start Download of .*/'"${image//./\\.}"
 status=1
 if [ -n "${tamper}" ]; then
     stop() { probe_done || refused; }
@@ -226,7 +246,7 @@ if [ -n "${tamper}" ]; then
         echo "FAIL: tamper=${tamper}: the pull failed before fetching ${image}, SHA256SUMS and SHA256SUMS.gpg" >&2
         status=1
     else
-        grep -aE "${refusal_re}" "${dir}/dogfood-serial.log" | sed 's/^/REFUSED /' | head -n 5
+        grep -aE "${refusal_re}|Failed to start Download of " "${dir}/dogfood-serial.log" | sed 's/^/REFUSED /' | head -n 5
         echo "PASS: tamper=${tamper}: ${image} refused after fetching the signed manifest (serial log: ${dir}/dogfood-serial.log)"
         status=0
     fi
