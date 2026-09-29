@@ -6,9 +6,14 @@
 #      and confirm the node runs it from slot B with a boot-counted UKI
 #   4. with <broken-dir>: update to it, corrupt its slot, and confirm boot
 #      counting rolls the node back to <next-dir> on its own
-# The updates verify the signed SHA256SUMS and have the optional "zfs"
-# sysupdate feature enabled, so the ZFS sysext follows the OS in lock-step
-# and must still be active after the rollback.
+# The updates run through systemd-sysupdate.service, the unit the
+# preset-enabled timer starts, verify the signed SHA256SUMS and have the
+# optional "zfs" sysupdate feature enabled, so the ZFS sysext follows the OS
+# in lock-step and must still be active after the rollback. Once an update is
+# staged the kured flag must be set, and the reboot unit must stand down while
+# a stand-in kubelet.service runs. Every disk boot has both update timers
+# enabled; a boot-counted UKI is blessed only after boot-complete.target,
+# which requires that no unit failed.
 # Usage: dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]
 set -euo pipefail
 
@@ -44,6 +49,8 @@ echo "PROBE boot-entry=$(bootctl status 2>/dev/null | sed -n 's/^ *Current Entry
 bootctl list --no-pager 2>/dev/null | sed -n 's/^ *\(title\|id\): */PROBE-LOG \1 /p'
 systemctl start boot-complete.target 2>/dev/null || true
 echo "PROBE ukis=$(ls /boot/EFI/Linux 2>/dev/null | tr '\n' ' ')"
+echo "PROBE timers-enabled=$(systemctl is-enabled systemd-sysupdate.timer systemd-sysupdate-reboot.timer | tr '\n' ' ')"
+echo "PROBE health=$(systemctl is-active systemd-boot-check-no-failures.service boot-complete.target | tr '\n' ' ')bless=$(/usr/lib/systemd/systemd-bless-boot status 2>/dev/null)"
 EOF
 
 cat > "${state}/update.probe" <<'EOF'
@@ -53,11 +60,17 @@ for f in /usr/lib/sysupdate.d/*.transfer; do
     sed -e 's|^Path=https://.*|Path=http://10.0.2.2:8765/|' \
         "${f}" > "/etc/sysupdate.d/${f##*/}"
 done
+rm -f /run/reboot-required
 rc=0
-systemd-sysupdate update > /run/sysupdate.log 2>&1 || rc=$?
+systemctl start --wait systemd-sysupdate.service || rc=$?
 echo "PROBE update=${rc}"
-tail -n 15 /run/sysupdate.log | sed 's/^/PROBE-LOG /'
+journalctl -b -o cat --no-pager -u systemd-sysupdate.service | tail -n 15 | sed 's/^/PROBE-LOG /'
 timeout 60 systemd-sysupdate list --no-pager 2>&1 | sed 's/^/PROBE-LOG /'
+echo "PROBE kured-flag=$(test -e /run/reboot-required && echo set || echo none)"
+systemd-run --quiet --unit=kubelet.service sleep 600
+systemctl start systemd-sysupdate-reboot.service
+echo "PROBE interlock=$(systemctl show -P Result systemd-sysupdate-reboot.service)"
+systemctl stop kubelet.service
 EOF
 
 echo "==> 1/4 diskless boot + systemd-sysinstall"
@@ -67,18 +80,23 @@ grep -q 'PROBE install=0' "${state}/1-install.log"
 echo "==> 2/4 boot the installed disk"
 DOGFOOD_BOOT=disk run "${dir}" "${state}/disk.probe" | tee "${state}/2-disk.log"
 grep -q 'PROBE root=xfs' "${state}/2-disk.log"
+grep -q 'PROBE timers-enabled=enabled enabled' "${state}/2-disk.log"
+grep -q 'PROBE update-timers=active active inactive' "${state}/2-disk.log"
 
 [ -n "${next}" ] || { echo "PASS: installed and booted from disk"; exit 0; }
 
 echo "==> 3/4 systemd-sysupdate to $(basename "${next}")"
 DOGFOOD_TIMEOUT="${DOGFOOD_UPDATE_TIMEOUT:-900}" DOGFOOD_BOOT=disk run "${next}" "${state}/update.probe" | tee "${state}/3-update.log"
 grep -q 'PROBE update=0' "${state}/3-update.log"
+grep -q 'PROBE kured-flag=set' "${state}/3-update.log"
+grep -q 'PROBE interlock=exec-condition' "${state}/3-update.log"
 
 echo "==> 4/4 boot the updated disk"
 DOGFOOD_BOOT=disk run "${next}" "${state}/disk.probe" | tee "${state}/4-updated.log"
 new_ver="$(ls "${next}"/bluefin-server-[0-9]*.efi | sed -n 's|.*/bluefin-server-\(.*\)\.efi$|\1|p')"
 grep -q "PROBE os=bluefin-server ${new_ver}" "${state}/4-updated.log"
 grep -q "PROBE zfs=active" "${state}/4-updated.log"
+grep -q "PROBE health=active active bless=good" "${state}/4-updated.log"
 [ -n "${broken}" ] || { echo "PASS: installed, updated A->B and booted ${new_ver}"; exit 0; }
 
 bad_ver="$(ls "${broken}"/bluefin-server-[0-9]*.efi | sed -n 's|.*/bluefin-server-\(.*\)\.efi$|\1|p')"
