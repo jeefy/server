@@ -2,7 +2,8 @@
 
 bluefin-boot-origin finds the URL a node booted from; bluefin-diskless-update-check
 fetches the signed SHA256SUMS from that directory and flags /run/reboot-required
-when it offers a newer release. Both run here against a local http.server and a
+when it offers a newer release that the next boot would pull, i.e. unless the
+origin names a versioned file (a pinned node only logs it). Both run here against a local http.server and a
 throwaway GnuPG key; no files/boot-keys are needed.
 """
 
@@ -104,14 +105,20 @@ def server(tmp_path: Path):
     httpd.server_close()
 
 
-def publish(directory: Path, version: str, gnupghome: Path, *, tamper: bool = False, sign: bool = True) -> None:
+def publish(
+    directory: Path, version: str, gnupghome: Path, *, tamper: bool = False, sign: bool = True, also: tuple[str, ...] = ()
+) -> None:
     names = [
-        f"bluefin-server_{version}.raw",
-        f"bluefin-server_{version}_d3107d37-a9da-32cf-3c19-49fa3b0cb1df.usr.raw",
-        f"bluefin-server-{version}.efi",
-        f"bluefin-server-netboot_{version}.efi",
-        f"bluefin-server-installer_{version}.raw",
-        f"zfs_{version}.raw.zst",
+        name
+        for v in [*also, version]
+        for name in (
+            f"bluefin-server_{v}.raw",
+            f"bluefin-server_{v}_d3107d37-a9da-32cf-3c19-49fa3b0cb1df.usr.raw",
+            f"bluefin-server-{v}.efi",
+            f"bluefin-server-netboot_{v}.efi",
+            f"bluefin-server-installer_{v}.raw",
+            f"zfs_{v}.raw.zst",
+        )
     ]
     sums = "".join(f"{'%064x' % i}  {name}\n" for i, name in enumerate(names))
     (directory / "SHA256SUMS").write_text(sums, encoding="utf-8")
@@ -124,11 +131,18 @@ def publish(directory: Path, version: str, gnupghome: Path, *, tamper: bool = Fa
         (directory / "SHA256SUMS").write_text(sums.replace(version, "99.99.99"), encoding="utf-8")
 
 
-def check(tmp_path: Path, url: str | None, keyring: Path, *, via_cred: bool = False):
+PINNED_RAW = f"bluefin-server_{RUNNING}.raw"
+NETBOOT_UKI = "bluefin-server-netboot.efi"
+
+
+def check(tmp_path: Path, url: str | None, keyring: Path, *, via: str = "stub", file: str = NETBOOT_UKI):
+    """Run the check with the boot origin <url>/<file> handed over <via>:
+    "cmdline" (rd.systemd.pull=), "cred" (the import.pull credential) or
+    "stub" (the StubDeviceURL EFI variable of a UEFI HTTP boot)."""
     os_release = tmp_path / "os-release"
     os_release.write_text(f'ID=bluefin-server\nIMAGE_ID=bluefin-server\nIMAGE_VERSION="{RUNNING}"\n', encoding="utf-8")
     sentinel = tmp_path / "run" / "reboot-required"
-    pull = PULL.format(url=f"{url}/bluefin-server_{RUNNING}.raw") if url else ""
+    pull = PULL.format(url=f"{url}/{file}") if url else ""
     env = dict(
         os.environ,
         BLUEFIN_BOOT_ORIGIN=str(ORIGIN),
@@ -139,27 +153,64 @@ def check(tmp_path: Path, url: str | None, keyring: Path, *, via_cred: bool = Fa
         BLUEFIN_CMDLINE=str(tmp_path / "cmdline"),
     )
     env.pop("CREDENTIALS_DIRECTORY", None)
-    if via_cred:
-        (tmp_path / "cmdline").write_text("root=tmpfs\n", encoding="utf-8")
+    cmdline = "root=tmpfs"
+    if url and via == "cred":
         (tmp_path / "creds").mkdir()
         (tmp_path / "creds" / "import.pull").write_text(pull + "\n", encoding="utf-8")
         env["CREDENTIALS_DIRECTORY"] = str(tmp_path / "creds")
-    else:
-        (tmp_path / "cmdline").write_text(("rd.systemd.pull=" + pull if pull else "root=tmpfs") + "\n", encoding="utf-8")
+    elif url and via == "stub":
+        # efivarfs: 4 attribute bytes, then a NUL-terminated UTF-16LE string.
+        stub = tmp_path / "StubDeviceURL"
+        stub.write_bytes(b"\x06\x00\x00\x00" + f"{url}/{file}\0".encode("utf-16-le"))
+        env["BLUEFIN_STUB_URL_VAR"] = str(stub)
+    elif url:
+        cmdline = "rd.systemd.pull=" + pull
+    (tmp_path / "cmdline").write_text(cmdline + "\n", encoding="utf-8")
     result = subprocess.run([str(CHECK)], capture_output=True, text=True, env=env, timeout=120)
     assert result.returncode == 0, result.stdout + result.stderr
     return sentinel.exists(), result.stdout + result.stderr
 
 
 @needs_tools
-@pytest.mark.parametrize("via_cred", [False, True])
-def test_newer_release_sets_the_flag(tmp_path: Path, server, keys, via_cred: bool) -> None:
+@pytest.mark.parametrize(
+    "via,file",
+    [
+        # Booty's HTTP boot URL: the served UKI changes, and the next boot
+        # pulls the image next to it.
+        ("stub", NETBOOT_UKI),
+        # An unversioned name the boot server repoints at each release.
+        ("cmdline", "bluefin-server.raw"),
+    ],
+)
+def test_newer_release_sets_the_flag(tmp_path: Path, server, keys, via: str, file: str) -> None:
     directory, url = server
     # 26.09.10 sorts after 26.09.2 as a version, not as a string.
     publish(directory, "26.09.10", keys["release"])
-    flagged, log = check(tmp_path, url, keys["release-ring"], via_cred=via_cred)
+    flagged, log = check(tmp_path, url, keys["release-ring"], via=via, file=file)
     assert flagged, log
-    assert f"<5>Bluefin Server 26.09.10 is available from {url}/ (running {RUNNING})" in log
+    assert f"<5>Bluefin Server 26.09.10 is available from {url}/ (running {RUNNING}); flagged" in log
+
+
+@needs_tools
+@pytest.mark.parametrize(
+    "via,file",
+    [
+        ("cmdline", PINNED_RAW),
+        ("cred", PINNED_RAW),
+        ("stub", f"bluefin-server-netboot_{RUNNING}.efi"),
+    ],
+)
+def test_newer_release_on_a_pinned_origin_sets_no_flag(tmp_path: Path, server, keys, via: str, file: str) -> None:
+    # The directory holds both releases; the origin names the running one, so
+    # a reboot would pull it again and kured would drain the node every check.
+    directory, url = server
+    publish(directory, "26.09.10", keys["release"], also=(RUNNING,))
+    flagged, log = check(tmp_path, url, keys["release-ring"], via=via, file=file)
+    assert not flagged, log
+    assert (
+        f"<5>Bluefin Server 26.09.10 is available from {url}/ (running {RUNNING}), "
+        f"but this node is pinned to {file}; not flagging"
+    ) in log
 
 
 @needs_tools

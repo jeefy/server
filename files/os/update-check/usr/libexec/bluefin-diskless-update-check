@@ -13,8 +13,19 @@
 #   3. read the release version from the manifest's bluefin-server_<ver>.raw
 #      entry and compare it with the running IMAGE_VERSION using
 #      `systemd-analyze compare-versions`, the ordering systemd-sysupdate uses;
-#   4. if the release is newer, touch /run/reboot-required (the sentinel kured
-#      watches) and log the new version.
+#   4. if the release is newer and the next boot would pick it up, touch
+#      /run/reboot-required (the sentinel kured watches) and log the new
+#      version.
+#
+# Whether the next boot picks it up depends on what the origin names. A
+# netboot UKI served under a fixed name (Booty's bluefin-server-netboot.efi,
+# found through StubDeviceURL) resolves the image at boot: the server swaps the
+# UKI and the next boot pulls the newer image next to it. An origin that names
+# a versioned file, bluefin-server_<ver>.raw (an explicit rd.systemd.pull= URL
+# or the import.pull credential) or bluefin-server-netboot_<ver>.efi, is
+# pinned: the node pulls the same version again after a reboot. Flagging it
+# would make kured drain and reboot the node on every check, so a pinned node
+# only logs that a newer release is available.
 #
 # It never reboots. Network and signature errors are logged and leave the
 # flag untouched, and the check always exits 0, so a boot server that cannot
@@ -62,6 +73,9 @@ if ! origin="$("${boot_origin}")"; then
   exit 0
 fi
 base="${origin%/*}"
+file="${origin##*/}"
+pinned=""
+[[ "${file}" =~ ^bluefin-server(-netboot)?_[0-9A-Za-z.]+\.(raw|efi)$ ]] && pinned="${file}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
@@ -97,10 +111,12 @@ if [ -z "${offered}" ]; then
   exit 0
 fi
 
-if systemd-analyze compare-versions "${offered}" gt "${running}" >/dev/null; then
+if ! systemd-analyze compare-versions "${offered}" gt "${running}" >/dev/null; then
+  info "up to date: ${base}/ offers ${offered}, running ${running}"
+elif [ -n "${pinned}" ]; then
+  notice "Bluefin Server ${offered} is available from ${base}/ (running ${running}), but this node is pinned to ${pinned}; not flagging ${sentinel}, point its boot origin at the new release to update"
+else
   mkdir -p "${sentinel%/*}"
   touch "${sentinel}"
   notice "Bluefin Server ${offered} is available from ${base}/ (running ${running}); flagged ${sentinel}, reboot to update"
-else
-  info "up to date: ${base}/ offers ${offered}, running ${running}"
 fi
