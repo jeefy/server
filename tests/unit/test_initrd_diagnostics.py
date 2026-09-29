@@ -410,3 +410,18 @@ def test_unknown_mode_is_a_usage_error(env: Env) -> None:
     result = env.run("bogus")
     assert result.returncode == 2
     assert "usage:" in result.stderr
+
+
+def test_console_links_point_at_existing_doc_sections() -> None:
+    text = HELPER.read_text(encoding="utf-8")
+    base = re.search(r"^DOCS=https://github\.com/projectbluefin/server/blob/main/(\S+)$", text, re.M)
+    assert base, "DOCS must link the repository's main branch"
+    doc = (ROOT / base.group(1)).read_text(encoding="utf-8")
+    slugs = {
+        re.sub(r"[^a-z0-9 -]", "", line.lstrip("#").strip().lower()).replace(" ", "-")
+        for line in doc.splitlines()
+        if line.startswith("## ")
+    }
+    anchors = set(re.findall(r"\$\{DOCS\}#([a-z0-9-]+)", text))
+    assert anchors == {"minimum-ram", "failure-modes", "ignition"}
+    assert anchors <= slugs
