@@ -147,6 +147,9 @@ jobs:
       - name: Install to disk and boot it
         run: bash scripts/dogfood-install.sh dist/diskless
 
+      - name: Install from the offline USB installer and boot it
+        run: bash scripts/dogfood-installer.sh dist/diskless
+
   # Publishes the signed image set as a new, immutable GitHub Release and as
   # an ORAS OCI artifact (one layer per file, tags <version> and latest).
   # Only runs on pushes/dispatches to main, where the code is already
