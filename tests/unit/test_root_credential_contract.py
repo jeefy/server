@@ -32,6 +32,15 @@ FIRSTBOOT_DROPIN = (
     / "10-bluefin-no-root-prompt.conf"
 )
 SSHD_DROPIN = REPO_ROOT / "files" / "os" / "ssh" / "sshd_config.d" / "bluefin-server.conf"
+GENERATED_SSHD_DROPIN = (
+    REPO_ROOT
+    / "files"
+    / "os"
+    / "systemd"
+    / "system"
+    / "sshd-generated@.service.d"
+    / "10-host-keygen.conf"
+)
 ISSUE_FILE = REPO_ROOT / "files" / "os" / "issue.d" / "30-bluefin.issue"
 ACCESS_SKILL = REPO_ROOT / "docs" / "skills" / "tpm2-credential-sealing.md"
 
@@ -120,6 +129,15 @@ def test_sshd_dropin_never_permits_password_authentication() -> None:
     assert re.search(r"^KbdInteractiveAuthentication\s+no$", sshd, re.MULTILINE)
     assert not re.search(r"^PermitRootLogin\s+yes$", sshd, re.MULTILINE)
     assert not re.search(r"^PasswordAuthentication\s+yes$", sshd, re.MULTILINE)
+
+
+def test_generated_sshd_gets_per_device_host_keys() -> None:
+    dropin = GENERATED_SSHD_DROPIN.read_text(encoding="utf-8")
+
+    # The ssh.listen credential is the credential-only way to open SSH; its
+    # systemd-ssh-generator sshd exits without host keys.
+    assert re.search(r"^Wants=ssh-host-keygen\.service$", dropin, re.MULTILINE)
+    assert re.search(r"^After=ssh-host-keygen\.service$", dropin, re.MULTILINE)
 
 
 def test_console_banner_advertises_no_credentials() -> None:
