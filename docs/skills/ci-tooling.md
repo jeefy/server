@@ -117,7 +117,7 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 | Job | Workflow | Trigger | Purpose |
 |-----|----------|---------|---------|
 | `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
-| `changes` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Decides whether `build` and `boot-test` run: always outside pull requests; on a pull request only if `.github/scripts/image-build-needed.py` finds a changed path that can reach the image set or the boot test (see [Build time and caches](#build-time-and-caches)). `contents: read` + `pull-requests: read`. |
+| `changes` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Decides whether `build` and `boot-test` run: always outside pull requests; on a pull request only if `.github/scripts/image-build-needed.py`, checked out from the PR's base revision, finds a changed path that can reach the image set or the boot test (see [Build time and caches](#build-time-and-caches)). `contents: read` + `pull-requests: read`. |
 | `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there. Off `main` it also exports two higher-versioned sets (`1.<run>.1`, `1.<run>.2`) for the update test. Read-only token. |
 | `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Runs the Secure Boot QEMU checks on the exported sets (see Core Process step 4). Read-only token. |
 | `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`) (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write` + `packages: write`. |
@@ -197,7 +197,9 @@ per-set cost is estimated at under 10 min.
 
 - **Docs-only pull requests skip the build.** The `changes` job feeds the PR's
   changed paths (renames under both names) to
-  `.github/scripts/image-build-needed.py`. It answers `false` only when every
+  `.github/scripts/image-build-needed.py` from the base revision, so a PR
+  cannot edit the classifier to skip its own build; a change to the
+  classifier or `build.yml` always builds. It answers `false` only when every
   path is docs, Markdown outside the build inputs, `tests/unit/`,
   `tests/e2e/`, or a workflow or script that does not build the image;
   `tests/unit/test_image_build_needed.py` fails if any tracked build input
