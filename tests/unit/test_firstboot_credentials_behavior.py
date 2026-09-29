@@ -1,9 +1,10 @@
 """Executed coverage for files/os/libexec/bluefin-firstboot-credentials.
 
-The helper replaces `systemd-firstboot --force --welcome=no` in
-bluefin-firstboot-credentials.service because Flatcar's /usr is built without
-systemd-firstboot. These tests drive it under bash against a scratch --root
-with credentials laid out the way ImportCredential= presents them.
+bluefin-firstboot-credentials.service runs this helper instead of
+systemd-firstboot: it writes the same files and also applies firstboot.hostname
+to the live kernel hostname before systemd-networkd starts. These tests drive
+it under bash against a scratch --root with credentials laid out the way
+ImportCredential= presents them.
 """
 
 from __future__ import annotations
@@ -41,8 +42,8 @@ def _run(tmp_path: Path, creds: dict[str, str], zoneinfo: tuple[str, ...] = ("Eu
 
 
 def test_helper_is_bash_that_passes_syntax() -> None:
-    # /usr/bin/bash, not /bin/bash: /bin is a tmpfiles-created symlink on
-    # Flatcar and the unit runs before sysinit.target.
+    # /usr/bin/bash, not /bin/bash: the image ships only /usr, and /bin is a
+    # symlink on the root file system that the image does not contain.
     assert HELPER.read_text(encoding="utf-8").startswith("#!/usr/bin/bash\n")
     subprocess.run(["bash", "-n", str(HELPER)], check=True)
 
