@@ -65,11 +65,11 @@ jobs:
           # track" and let the run report success having resolved nothing.
           just bst source track freedesktop-sdk.bst
 
-      - name: Sync release-version to the tracked FSDK point release
+      - name: Sync installer-version to the tracked FSDK point release
         run: |
           set -euo pipefail
-          # project.conf's release-version names every published OS asset and
-          # must equal the FSDK point release; check-release-version.py fails
+          # project.conf's installer-version must equal the FSDK point
+          # release; check-release-version.py fails
           # closed on drift and is the first thing `just validate` runs. Without
           # this step an FSDK bump would open a PR that dies in seconds at
           # "Validate Element Graph" — exactly the failure the old job produced.
@@ -78,7 +78,7 @@ jobs:
             echo "ERROR: tracked freedesktop-sdk.bst ref carries no X.Y.Z point release" >&2
             exit 1
           fi
-          sed -i -E "s|^([[:space:]]*release-version:[[:space:]]*).*|\1\"${pinned}\"|" project.conf
+          sed -i -E "s|^([[:space:]]*installer-version:[[:space:]]*).*|\1\"${pinned}\"|" project.conf
           # Assert before opening the PR; a failure here means the sync broke.
           python3 .github/scripts/check-release-version.py
 
@@ -116,7 +116,7 @@ jobs:
             echo "| --- | --- | --- |"
             echo "| \`elements/freedesktop-sdk.bst\` | \`${old_fsdk}\` | \`${new_fsdk}\` |"
             echo ""
-            echo "\`project.conf\`'s \`release-version\` is synced to the pinned FSDK point"
+            echo "\`project.conf\`'s \`installer-version\` is synced to the pinned FSDK point"
             echo "release in the same commit, because \`check-release-version.py\` fails closed"
             echo "on drift between the two."
             echo ""
