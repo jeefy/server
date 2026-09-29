@@ -10,7 +10,6 @@ ImportCredential= presents them.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -48,9 +47,8 @@ def test_helper_is_bash_that_passes_syntax() -> None:
     subprocess.run(["bash", "-n", str(HELPER)], check=True)
 
 
-@pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck not installed")
-def test_helper_is_shellcheck_clean_at_warning_level() -> None:
-    subprocess.run(["shellcheck", "-S", "warning", str(HELPER)], check=True)
+def test_helper_is_shellcheck_clean_at_warning_level(shellcheck: str) -> None:
+    subprocess.run([shellcheck, "-S", "warning", str(HELPER)], check=True)
 
 
 def test_all_five_credentials_write_what_systemd_firstboot_would(tmp_path: Path) -> None:
