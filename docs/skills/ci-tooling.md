@@ -4,7 +4,7 @@ description: CI workflow conventions for Bluefin Server. Use when writing or edi
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-28"
   context7-sources:
     - /websites/github_en_actions
     - /websites/cli_github_manual
@@ -72,8 +72,13 @@ may hold a write token. In `build.yml`, write tokens are granted to exactly
 one job:
 
 - `release` — creates the GitHub Release and pushes the OCI artifact; gated to
-  `refs/heads/main`. It holds `contents: write` (release) and
-  `packages: write` (ghcr.io push).
+  `refs/heads/main`. It holds `contents: write` (release),
+  `packages: write` (ghcr.io push and attestation referrers), and
+  `id-token: write`, `attestations: write` and `artifact-metadata: write`
+  for the provenance and SBOM attestations.
+
+Its pull-request rehearsal, `release-dry-run`, keeps the read-only default
+and uses no secrets.
 
 Junction ref tracking must never run on `pull_request`. It used to, as a
 `track-refs` job gated on `startsWith(github.head_ref, 'renovate/')`, and a
@@ -118,7 +123,8 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 | `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
 | `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there. Read-only token. |
 | `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Downloads the build job's exported image set and runs the Secure Boot QEMU checks: `scripts/dogfood-diskless.sh --check` (diskless boot) and `scripts/dogfood-install.sh` (install to disk and boot it). Read-only token. |
-| `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`) (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write` + `packages: write`. |
+| `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is through `scripts/publish-release.sh`: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`), with provenance and SBOM attestations for both (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). Write permissions listed above. |
+| `release-dry-run` | `build.yml` | `pull_request` | Runs the same `scripts/publish-release.sh` commands against the PR's image set: verify, render `gh release create`, and a real `oras push` to a `registry` service container (pinned by digest) that it pulls back. Read-only token, no secrets. |
 | `docs` | `docs-checks.yml` | `pull_request`, `push/main` | Runs markdown and skill metadata checks via `docs-checks.py`. Read-only token. |
 | `unit` | `unit-tests.yml` | `pull_request`, `push/main` | Runs pytest and BATS unit test suites. Read-only token. |
 
@@ -151,7 +157,11 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
     merges), GitHub Actions publishes `dist/diskless/` as-is: an immutable
     GitHub Release `v<image-version>` and an ORAS OCI artifact
     `ghcr.io/<owner>/bluefin-server:<ver>,latest`. Nodes verify updates
-    against the `SHA256SUMS` / `SHA256SUMS.gpg` already in that set.
+    against the `SHA256SUMS` / `SHA256SUMS.gpg` already in that set. Every
+    pull request rehearses this path in `release-dry-run`, so the publish
+    code is exercised before it first runs on main. Attestations, the SBOM
+    and the verify commands are in
+    [`systemd-sysupdate-verification.md`](systemd-sysupdate-verification.md).
 
 ## Common Rationalizations
 
@@ -179,6 +189,9 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
 - [ ] Release signing happens in `oci/bluefin-server-image.bst`; there is no
       separate CI signing step, and the release job publishes `dist/diskless/`
       as-is (GitHub Release + OCI artifact).
+- [ ] Publish logic lives in `scripts/publish-release.sh`, not inline in the
+      workflow; `tests/unit/test_release_workflow.py` keeps `release` and
+      `release-dry-run` on the same commands and the same `setup-oras` pin.
 - [ ] The signing secret names (`BOOT_KEYS_TARBALL`, `SYSUPDATE_SIGNING_KEY`)
       match the ones documented in
       `docs/skills/systemd-sysupdate-verification.md`.
