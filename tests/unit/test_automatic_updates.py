@@ -2,8 +2,9 @@
 
 Installed nodes run systemd-sysupdate.timer and systemd-sysupdate-reboot.timer
 by vendor preset; Kubernetes nodes leave the reboot to kured; diskless and USB
-installer boots keep every update unit inert; boot-complete.target requires
-that no unit failed before systemd-bless-boot marks a counted UKI good.
+installer boots keep every update unit inert; operator lock files hold the
+local reboot; boot-complete.target requires that no unit failed before
+systemd-bless-boot marks a counted UKI good.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ PRESET = PRESETS / "80-bluefin-updates.preset"
 ELEMENTS = ROOT / "elements" / "bluefin-server"
 DISKLESS = UNITS / "systemd-sysupdate.service.d" / "10-diskless.conf"
 KURED = UNITS / "systemd-sysupdate.service.d" / "20-kured.conf"
-INTERLOCK = UNITS / "systemd-sysupdate-reboot.service.d" / "20-kubernetes.conf"
+INTERLOCK = UNITS / "systemd-sysupdate-reboot.service.d" / "20-interlock.conf"
 DISKLESS_ONLY = "/run/machines/rootdisk.raw"
 
 
@@ -35,6 +36,15 @@ def ini(path: Path) -> configparser.ConfigParser:
     parser.optionxform = str
     parser.read_string(path.read_text(encoding="utf-8"))
     return parser
+
+
+def values(path: Path, key: str) -> list[str]:
+    """Every value of <key> in order; configparser keeps only the last one."""
+    return [
+        line.split("=", 1)[1]
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.startswith(f"{key}=")
+    ]
 
 
 def conditions(path: Path) -> list[str]:
@@ -106,8 +116,18 @@ def test_kured_flag_is_set_only_when_an_update_is_pending() -> None:
         assert "ExecStart" not in keys, dropin
 
 
+def test_reboot_is_held_by_the_operator_lock_files() -> None:
+    # From projectbluefin/server#182: a failed condition skips the unit.
+    assert conditions(INTERLOCK) == [
+        "ConditionPathExists=!/run/reboot-lock",
+        "ConditionPathExists=!/etc/reboot-lock",
+    ]
+    # One interlock drop-in: #182's reboot-coordination.conf must not come back.
+    assert sorted(p.name for p in INTERLOCK.parent.iterdir()) == ["10-diskless.conf", "20-interlock.conf"]
+
+
 def _interlock_script() -> str:
-    cmd = ini(INTERLOCK)["Service"]["ExecCondition"]
+    cmd = values(INTERLOCK, "ExecCondition")[-1]
     argv = shlex.split(cmd.replace("$$", "$"))
     assert argv[:2] == ["/usr/bin/sh", "-c"] and len(argv) == 3, argv
     return argv[2]

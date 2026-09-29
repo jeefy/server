@@ -214,7 +214,7 @@ only when a newer version than the booted one is installed.
   [kured](https://kured.dev/) (cordon, drain, one node at a time).
   `systemd-sysupdate.service.d/20-kured.conf` touches `/run/reboot-required`
   after each run once `systemd-sysupdate pending` reports an installed update.
-  `systemd-sysupdate-reboot.service.d/20-kubernetes.conf` skips the local
+  `systemd-sysupdate-reboot.service.d/20-interlock.conf` skips the local
   reboot (`ExecCondition=`) while `kubelet.service`, `k0scontroller.service` or
   `k0sworker.service` is running, the interlock proposed in
   [#182](https://github.com/projectbluefin/server/pull/182). Without kured, a
