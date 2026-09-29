@@ -141,37 +141,6 @@ jobs:
           mkdir -p ~/.cache
           ln -sf /mnt/buildstream ~/.cache/buildstream
 
-      # Opt-in: with the CASD client identity configured (repository variable
-      # CASD_CLIENT_CERT, secret CASD_CLIENT_KEY), builds on main push their
-      # artifacts to the shared BuildStream cache so later builds pull them.
-      # Without it, and always on pull requests, the caches stay pull-only.
-      - name: Configure BuildStream cache push
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          CASD_CLIENT_CERT: ${{ vars.CASD_CLIENT_CERT }}
-          CASD_CLIENT_KEY: ${{ secrets.CASD_CLIENT_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CASD_CLIENT_CERT}" ] || [ -z "${CASD_CLIENT_KEY}" ]; then
-            echo "No CASD client identity configured; not pushing to the BuildStream cache."
-            exit 0
-          fi
-          umask 077
-          mkdir -p .bst-push
-          printf '%s\n' "${CASD_CLIENT_CERT}" > .bst-push/client.crt
-          printf '%s\n' "${CASD_CLIENT_KEY}" > .bst-push/client.key
-          cat > .bst-push/buildstream.conf <<'EOF'
-          artifacts:
-            override-project-caches: false
-            servers:
-            - url: https://cache.projectbluefin.io:11002
-              push: true
-              auth:
-                client-cert: /src/.bst-push/client.crt
-                client-key: /src/.bst-push/client.key
-          EOF
-          echo "BST_PUSH_CONFIG=/src/.bst-push/buildstream.conf" >> "$GITHUB_ENV"
-
       - name: Build and export the image set
         run: just export-image
 
@@ -184,20 +153,6 @@ jobs:
           path: dist/diskless/
           if-no-files-found: error
           retention-days: 1
-
-      # Best effort: a cache outage must not fail a release build. --deps all
-      # reaches the kernel, which FSDK's caches never hold for our module
-      # certificate and which dominates the build time.
-      - name: Push artifacts to the BuildStream cache
-        if: env.BST_PUSH_CONFIG != ''
-        continue-on-error: true
-        env:
-          BST_FLAGS: --config ${{ env.BST_PUSH_CONFIG }}
-        run: just bst artifact push --deps all oci/bluefin-server-image.bst
-
-      - name: Remove the BuildStream cache identity
-        if: always()
-        run: rm -rf .bst-push
 
       # The A/B update and boot-counted rollback test needs two more image
       # sets that sort above this one. Only the version differs, so each is a
