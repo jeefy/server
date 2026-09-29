@@ -79,6 +79,23 @@ image signing key, the new keyring; see
 "Rotating the Signing Key" in
 [systemd-sysupdate-verification.md](systemd-sysupdate-verification.md).
 
+## Reproducible builds
+
+With the same checkout, keys and `image-version`, rebuilding the final
+assembly gives the same bytes. BuildStream exports `SOURCE_DATE_EPOCH` into
+every sandbox and the assembly steps honor it: `mkfs.erofs` and
+`systemd-repart` clamp file times to it, the initrd and ESP trees are clamped
+before `cpio` and `mcopy` copy them, and `systemd-sbsign` (not `sbsign`)
+uses it as the signing time of systemd-boot and the UKIs. `systemd-repart
+--seed` fixes partition UUIDs.
+
+Two outputs carry a signing time of their own: `SHA256SUMS.gpg` and the
+`efi-keys/*.auth` updates, which `sbvarsign` stamps with the current time
+(they stay fixed as long as `bluefin-server/keys/efi-keys.bst` stays
+cached). `.github/workflows/reproducibility.yml` checks the rest weekly:
+it builds, deletes the final-assembly artifacts, rebuilds them without remote
+caches, and compares every file except `*.gpg`.
+
 ## Dogfood: boot it in QEMU
 
 All dogfood paths boot with Secure Boot firmware (OVMF secboot). The firmware
