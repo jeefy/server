@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-28"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -99,8 +99,15 @@ Useful environment variables:
   (picked up by HTTP-booted nodes with no Ignition credential).
 - `DOGFOOD_SERVE_EXTRA=<dir>` — also serve the files in `<dir>`.
 - `DOGFOOD_TAMPER=raw|sums` — serve a corrupted DDI or a re-hashed, unsigned
-  `SHA256SUMS`; the boot must fail, proving the signature check.
+  `SHA256SUMS`. `--check` then passes only if the initrd's pull fails after
+  the image, `SHA256SUMS` and `SHA256SUMS.gpg` were served, and nothing
+  booted; the pull's own messages are copied to the serial log.
 - `DOGFOOD_EXTRA_PROBE=<file>` — shell snippet appended to the in-guest probe.
+- `DOGFOOD_EXPECT=<ERE>` — `--check` also requires the probe output to match,
+  e.g. with `tests/fixtures/ignition/apply-marker.ign` and its `.probe`:
+  `PROBE ignition marker=applied unit=active enabled=enabled ran=yes`.
+- `DOGFOOD_PORT`, `DOGFOOD_MEM`, `DOGFOOD_TIMEOUT` — HTTP port (8765), guest
+  memory in MiB (4096), `--check` deadline in seconds (600).
 
 `scripts/dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]` is the full
 end-to-end check: install from a diskless boot, boot the installed disk,
@@ -108,10 +115,12 @@ end-to-end check: install from a diskless boot, boot the installed disk,
 the signed manifest (with the `zfs` feature enabled, so the ZFS sysext follows
 the OS in lock-step), and with `<broken-dir>` corrupt the updated slot and
 confirm boot counting rolls the node back to `<next-dir>` on its own, with the
-matching ZFS sysext still merged. CI runs the first two stages
-(`dogfood-diskless.sh --check`, `dogfood-install.sh dist/diskless`) as the
-`boot-test` job in `.github/workflows/build.yml` on every pull request and
-push to main.
+matching ZFS sysext still merged. `<next-dir>` and `<broken-dir>` are
+ordinary image sets with higher versions, e.g.
+`just set-version <ver>.1 && just export-image dist/diskless-next` (and
+`.2` into `dist/diskless-broken`); the script corrupts the broken slot
+itself. Which of these scenarios CI runs is listed in
+[ci-tooling.md](ci-tooling.md) (the `boot-test` job).
 
 ## Local builds with a remote cache
 
