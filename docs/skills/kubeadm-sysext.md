@@ -4,7 +4,7 @@ description: Build, ship and operate the opt-in kubeadm worker systemd-sysext (k
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-28"
 ---
 # kubeadm worker sysext
 
@@ -63,6 +63,9 @@ the cluster CNI (Cilium's `cilium-cni`). containerd searches
   `--volume-plugin-dir=/var/lib/kubelet/volumeplugins` because `/usr` is read-only.
 - `/etc/resolv.conf` links to systemd-resolved's `/run/systemd/resolve/resolv.conf`
   (base image), the path kubelet's `resolvConf` expects.
+- While `kubelet.service` runs or restarts, the base image's automatic reboot
+  stands down and reboots belong to kured; see "Updates" in
+  [ddi-installer.md](ddi-installer.md).
 
 ## Host tools
 
