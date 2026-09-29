@@ -38,7 +38,7 @@ Priorities are derived from [gap-analysis-distros.md](gap-analysis-distros.md).
 | # | Item | Rationale / source gap |
 |---|------|------------------------|
 | 1 | TPM2-sealed /var on installed nodes | Credential sealing exists (`tpm2-credential-sealing.md`); persistent state is not yet bound to the TPM. |
-| 2 | aarch64 build axis | `project.conf` and `include/arch.yml` already model it; no CI coverage yet. |
+| 2 | aarch64 build axis | `project.conf`, `include/arch.yml` and the k0s/kubeadm arm64 binary pins resolve `-o arch aarch64`. Missing: aarch64 FSDK artifacts in any cache (a full bootstrap build), an aarch64 CI build, and an aarch64 dogfood path (`scripts/dogfood-*.sh` run `qemu-system-x86_64` with x64 OVMF). |
 | 3 | Booty merge and its Secure Boot shim story | The Bluefin HTTP-boot support works from [Booty](https://github.com/jeefy/booty) `feat/bluefin-http-boot`; it still needs to merge, and enrollment-free first boots need a shim-signed path. |
 | 4 | Credential provisioning smoke tests on real hardware | SSH keys, static network, and firstboot settings are wired through systemd credentials; TPM2-sealed credential decryption still needs hardware proof. |
 | 5 | Native reboot coordination for non-Kubernetes and single-node hosts | Kured only covers Kubernetes nodes; no FleetLock/locksmith equivalent. |
