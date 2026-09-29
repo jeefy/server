@@ -1,0 +1,6 @@
+# Automatic updates (docs/skills/ddi-installer.md, "Updates").
+# Installed nodes download a new release into the inactive slot and reboot
+# into it in the nightly window; Kubernetes nodes leave the reboot to kured.
+# Drop-ins condition both timers off on diskless and USB installer boots.
+enable systemd-sysupdate.timer
+enable systemd-sysupdate-reboot.timer

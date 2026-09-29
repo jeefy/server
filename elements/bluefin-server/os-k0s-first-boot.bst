@@ -5,7 +5,9 @@ description: |
   (ssh-host-keygen.service plus its sshd.service drop-in), the installer
   source ESP mounts (run-bluefin-boot.mount for netboot,
   run-bluefin-installer.mount for the USB installer), and the
-  systemd-sysinstall.service drop-in the USB installer boots into.
+  systemd-sysinstall.service drop-in the USB installer boots into, and the
+  systemd-sysupdate(-reboot) drop-ins (diskless conditions, the kured flag,
+  the Kubernetes reboot interlock).
 
 sources:
   - kind: local

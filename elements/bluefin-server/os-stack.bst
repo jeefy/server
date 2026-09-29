@@ -39,9 +39,6 @@ depends:
   # First-Boot Credentials Provisioning
   - bluefin-server/os-creds-prov.bst
 
-  # Reboot Coordination for Kured
-  - bluefin-server/os-kured-hook.bst
-
   # System Management Justfile
   - bluefin-server/os-justfile.bst
 
