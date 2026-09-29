@@ -256,12 +256,26 @@ jobs:
           name: image-update
           path: dist
 
+      # Ubuntu's OVMF (2025.11) rejects systemd-boot's PK enrollment with
+      # "Security violation", so the guests kept booting in setup mode with
+      # nothing verified. Use Fedora's edk2 build, pinned by checksum, which
+      # enrolls the keys; dogfood-diskless.sh now fails if Secure Boot is off.
       - name: Install QEMU and OVMF
+        env:
+          OVMF_RPM_URL: https://kojipkgs.fedoraproject.org/packages/edk2/20260508/6.fc44/noarch/edk2-ovmf-20260508-6.fc44.noarch.rpm
+          OVMF_RPM_SHA256: 8b157ab2aa0cccccf021f43011308349147c76ae59550f52239ea50678dd0a5f
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 libarchive-tools
           sudo chmod 666 /dev/kvm
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/edk2-ovmf.rpm" "${OVMF_RPM_URL}"
+          echo "${OVMF_RPM_SHA256}  ${RUNNER_TEMP}/edk2-ovmf.rpm" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/ovmf"
+          bsdtar -xf "${RUNNER_TEMP}/edk2-ovmf.rpm" -C "${RUNNER_TEMP}/ovmf" \
+            ./usr/share/edk2/ovmf/OVMF_CODE.secboot.fd ./usr/share/edk2/ovmf/OVMF_VARS.fd
+          echo "OVMF_CODE=${RUNNER_TEMP}/ovmf/usr/share/edk2/ovmf/OVMF_CODE.secboot.fd" >> "$GITHUB_ENV"
+          echo "OVMF_VARS=${RUNNER_TEMP}/ovmf/usr/share/edk2/ovmf/OVMF_VARS.fd" >> "$GITHUB_ENV"
 
       - name: Diskless boot
         run: bash scripts/dogfood-diskless.sh dist/diskless --check
