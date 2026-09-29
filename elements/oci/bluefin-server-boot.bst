@@ -183,7 +183,8 @@ config:
         --cmdline=@"/tmp/$1.cmdline" \
         --os-release=@/osrel/usr/lib/os-release \
         --uname="$(ls /kmods/usr/lib/modules)" \
-        --signtool=sbsign \
+        --signtool=systemd-sbsign \
+        --no-sign-kernel \
         --secureboot-private-key=/boot-keys/DB.key \
         --secureboot-certificate=/boot-keys/DB.crt \
         --output="%{install-root}/$1.efi"
