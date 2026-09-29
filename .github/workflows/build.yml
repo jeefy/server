@@ -22,6 +22,9 @@ jobs:
   # unit tests, other workflows; see .github/scripts/image-build-needed.py)
   # skip the ~2 h build. A skipped job reports as passing, so `build` and
   # `boot-test` can be required checks without blocking those PRs.
+  # The classifier runs from the base revision, never the PR head, so a PR
+  # cannot edit it to skip its own build; changes to it or to this workflow
+  # always build.
   changes:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
@@ -31,12 +34,13 @@ jobs:
     outputs:
       image: ${{ steps.decide.outputs.image }}
     steps:
-      - name: Checkout repository
+      - name: Checkout the base revision's scripts
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.base.sha }}
           sparse-checkout: .github/scripts
+          persist-credentials: false
 
       - name: Decide whether to build the image set
         id: decide
@@ -45,7 +49,8 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
+          # Before the classifier exists on the base branch, build.
+          if [ "${GITHUB_EVENT_NAME}" != pull_request ] || [ ! -f .github/scripts/image-build-needed.py ]; then
             echo "image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi

@@ -2,9 +2,9 @@
 
 The build workflow skips the ~2 h image build and the boot test for pull
 requests the script classifies as not touching the image. A wrong `false`
-merges an untested image change, so the invariant guarded here is that every
-tracked file under a build input root, and the build workflow itself, always
-builds.
+merges an untested image change, so the invariants guarded here are that every
+tracked file under a build input root, the build workflow and the classifier
+always build, and that the workflow runs the base revision's classifier.
 """
 
 import importlib.util
@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / ".github" / "scripts" / "image-build-needed.py"
@@ -44,6 +45,26 @@ def test_every_build_input_builds():
 
 def test_the_classifier_itself_builds():
     assert image_build_needed.needs_build(".github/scripts/image-build-needed.py")
+
+
+@pytest.mark.parametrize("path", sorted(image_build_needed.GATE_FILES))
+def test_gate_changes_build_even_among_docs(path):
+    assert (ROOT / path).is_file(), f"{path} moved; update GATE_FILES"
+    assert image_build_needed.needs_build(path)
+    assert image_build_needed.image_build_needed(["docs/a.md", path])
+
+
+def test_changes_job_runs_the_base_revision_classifier():
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+    steps = workflow["jobs"]["changes"]["steps"]
+    checkouts = [s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@")]
+    assert len(checkouts) == 1
+    ref = checkouts[0]["with"]["ref"]
+    assert ref == "${{ github.event.pull_request.base.sha }}"
+    assert "repository" not in checkouts[0]["with"]
+    run = "\n".join(s.get("run", "") for s in steps)
+    assert "python3 .github/scripts/image-build-needed.py" in run
+    assert "[ ! -f .github/scripts/image-build-needed.py ]" in run
 
 
 @pytest.mark.parametrize(
