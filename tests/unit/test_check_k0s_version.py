@@ -8,8 +8,8 @@ so every fail-closed branch could regress to fail-open unnoticed.
 
 Covered here: ``read()``, ``scalar()``, ``expand()``, ``fail()`` and each
 rejection path of ``main()`` — non-filename-safe version, missing/hardcoded
-upstream URL, missing/OS-axis/underived ``FNAME``, missing generated
-``VERSION_ID``, a hardcoded ``VERSION_ID=`` in extension-release.k0s, literal
+upstream URL, missing/OS-axis/underived ``sysext-image``, missing derived
+``sysext-version``, a hardcoded ``VERSION_ID=`` in extension-release.k0s, literal
 k0s versions restated in any consumer, a missing sysupdate ``MatchPattern``,
 and an asset name whose ``@v`` capture disagrees with ``%{k0s-version}``.
 """
@@ -39,11 +39,9 @@ sources:
 """
 
 GOOD_SYSEXT = """kind: manual
-config:
-  install-commands:
-    - |
-      FNAME="k0s-%{k0s-version}.raw"
-      echo "VERSION_ID=%{k0s-version}" >> extension-release.k0s
+variables:
+  sysext-image: "k0s-%{k0s-version}"
+  sysext-version: "%{k0s-version}"
 """
 
 GOOD_EXTENSION_RELEASE = "NAME=k0s\nID=_any\n"
@@ -262,14 +260,14 @@ def test_main_rejects_hardcoded_upstream_tag_in_url(checker):
 
 def test_main_rejects_missing_fname(checker):
     checker.K0S_SYSEXT.write_text(
-        'echo "VERSION_ID=%{k0s-version}"\n', encoding="utf-8"
+        'sysext-version: "%{k0s-version}"\n', encoding="utf-8"
     )
-    assert 'declares no FNAME="..." asset name' in _run(checker)
+    assert 'declares no sysext-image: "..." asset name' in _run(checker)
 
 
 def test_main_rejects_fname_on_the_os_release_axis(checker):
     checker.K0S_SYSEXT.write_text(
-        GOOD_SYSEXT.replace("%{k0s-version}.raw", "%{release-version}.raw", 1),
+        GOOD_SYSEXT.replace('"k0s-%{k0s-version}"', '"k0s-%{release-version}"'),
         encoding="utf-8",
     )
     assert "names the k0s sysext on an OS release" in _run(checker)
@@ -277,7 +275,7 @@ def test_main_rejects_fname_on_the_os_release_axis(checker):
 
 def test_main_rejects_fname_not_derived_from_k0s_version(checker):
     checker.K0S_SYSEXT.write_text(
-        GOOD_SYSEXT.replace('FNAME="k0s-%{k0s-version}.raw"', 'FNAME="k0s.raw"'),
+        GOOD_SYSEXT.replace('"k0s-%{k0s-version}"', '"k0s"'),
         encoding="utf-8",
     )
     assert "does not derive the sysext asset name" in _run(checker)
@@ -285,7 +283,7 @@ def test_main_rejects_fname_not_derived_from_k0s_version(checker):
 
 def test_main_rejects_missing_generated_version_id(checker):
     checker.K0S_SYSEXT.write_text(
-        'FNAME="k0s-%{k0s-version}.raw"\n', encoding="utf-8"
+        'sysext-image: "k0s-%{k0s-version}"\n', encoding="utf-8"
     )
     assert "does not generate VERSION_ID= from" in _run(checker)
 
@@ -354,7 +352,7 @@ def test_main_rejects_prefix_drift_between_fname_and_match_pattern(checker):
 def test_main_rejects_suffix_drift_between_fname_and_match_pattern(checker):
     checker.K0S_SYSEXT.write_text(
         GOOD_SYSEXT.replace(
-            'FNAME="k0s-%{k0s-version}.raw"', 'FNAME="k0s-%{k0s-version}.erofs"'
+            '"k0s-%{k0s-version}"', '"k0s-%{k0s-version}-erofs"'
         ),
         encoding="utf-8",
     )
