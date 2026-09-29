@@ -14,6 +14,11 @@ description: |
   payloads. Build-only elements (signing keys, image tooling) are not
   runtime dependencies of these and never appear.
 
+  A sysext only build-depends on the upstream binaries or source it
+  stages, which the plugin does not follow, so each is listed twice: the
+  oci/*-sysext.bst element for its own local sources (units,
+  extension-release, config), and the element it stages them from.
+
   oci/bluefin-server-image.bst stamps creationInfo.created and ships the
   result as bluefin-server_<ver>.spdx.json inside the signed SHA256SUMS.
 
@@ -24,9 +29,12 @@ build-depends:
 - bluefin-server/os-stack.bst
 - bluefin-server/initrd/initrd-stack.bst
 - freedesktop-sdk.bst:components/linux.bst
+- oci/k0s-sysext.bst
 - k0s/k0s-bin.bst
 - oci/kubestellar-sysext.bst
+- oci/kubeadm-sysext.bst
 - kubeadm/kubeadm-bin.bst
+- oci/zfs-sysext.bst
 - zfs/openzfs.bst
 
 config:
