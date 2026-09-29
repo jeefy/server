@@ -164,7 +164,7 @@ config:
     # SPDX requires a creation time, which the plugin leaves to the build,
     # and unique SPDXIDs: FSDK bootstrap elements reached through two
     # junction paths are collected twice, as identical packages.
-    jq --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    jq --arg created "$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" \
       '.creationInfo.created = $created
        | .packages |= unique_by(.SPDXID)
        | .relationships |= unique_by(.relatedSpdxElement)' \
