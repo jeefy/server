@@ -9,8 +9,9 @@
 # is handed over as the import.pull system credential via SMBIOS.
 #
 # Usage: dogfood-diskless.sh <dir with .raw/.efi/.esp.raw> [--check]
-#   --check  headless: boot, run a probe, exit 0 if no unit failed. With
-#            DOGFOOD_TAMPER set, exit 0 only if the initrd refuses the image.
+#   --check  headless: boot, run a probe, exit 0 if Secure Boot was enforced and no
+#            unit failed. With DOGFOOD_TAMPER set, exit 0 only if the initrd
+#            refuses the image.
 # Environment:
 #   DOGFOOD_PORT=<port>        HTTP port for the built-in server (default 8765)
 #   DOGFOOD_MEM=<MiB>          guest memory (default 4096)
@@ -245,6 +246,9 @@ if [ -n "${tamper}" ]; then
         # transport failure, not a verification failure.
         echo "FAIL: tamper=${tamper}: the pull failed before fetching ${image}, SHA256SUMS and SHA256SUMS.gpg" >&2
         status=1
+    elif ! grep -aq 'Secure boot enabled' "${dir}/dogfood-serial.log"; then
+        echo "FAIL: tamper=${tamper}: refused, but the kernel did not run with Secure Boot enabled" >&2
+        status=1
     else
         grep -aE "${refusal_re}|Failed to start Download of " "${dir}/dogfood-serial.log" | sed 's/^/REFUSED /' | head -n 5
         echo "PASS: tamper=${tamper}: ${image} refused after fetching the signed manifest (serial log: ${dir}/dogfood-serial.log)"
@@ -260,6 +264,11 @@ fi
 failed="$(grep -a '\[FAILED\]' "${dir}/dogfood-serial.log" || true)"
 if [ "${status}" = 0 ] && [ -n "${DOGFOOD_EXPECT:-}" ] && ! grep -aqE -- "${DOGFOOD_EXPECT}" "${dir}/dogfood-serial.log"; then
     echo "FAIL: booted, but the probe output does not match DOGFOOD_EXPECT=${DOGFOOD_EXPECT}" >&2
+    status=1
+elif [ "${status}" = 0 ] && ! grep -aq 'PROBE secureboot=enabled' "${dir}/dogfood-serial.log"; then
+    # Firmware that refuses the enrollment payloads boots on in setup mode,
+    # where nothing is verified; that is not a Secure Boot boot.
+    echo "FAIL: booted without Secure Boot ($(grep -aoE 'PROBE secureboot=.*' "${dir}/dogfood-serial.log" | head -n1)); see the enrollment messages in the serial log" >&2
     status=1
 elif [ "${status}" = 0 ] && [ -z "${failed}" ] && grep -aq 'PROBE failed=0' "${dir}/dogfood-serial.log"; then
     echo "PASS: ${boot} boot with no failed units (serial log: ${dir}/dogfood-serial.log)"
