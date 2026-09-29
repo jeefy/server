@@ -75,6 +75,16 @@ def test_ram_check_unit_checks_its_import_instance() -> None:
     ]
 
 
+def test_ignition_karg_warning_runs_in_every_initrd() -> None:
+    u = unit(UNITS / "bluefin-ignition-kargs.service")
+    assert u["Unit"]["ConditionPathExists"] == ["/etc/initrd-release"]
+    assert "bluefin-ignition-credentials.service" in " ".join(u["Unit"]["Before"])
+    assert u["Service"]["ExecStart"] == ["/usr/libexec/bluefin-boot-diagnostics ignition-kargs"]
+    boot = BOOT.read_text(encoding="utf-8")
+    assert 'ln -sf ../bluefin-ignition-kargs.service "${wants}/initrd.target.wants/bluefin-ignition-kargs.service"' in boot
+    assert "libexec/bluefin-boot-diagnostics" in boot, "the UKI build checks the helper is in the initrd"
+
+
 @pytest.mark.parametrize("stage", ["fetch-offline", "fetch", "disks", "mount", "files"])
 def test_ignition_failures_reach_the_summary(stage: str) -> None:
     u = unit(IGN_UNITS / f"ignition-{stage}.service")
