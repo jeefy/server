@@ -144,7 +144,14 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
     shipped keyring).
  4. **Boot test:** Downloads the exported image sets and runs, in QEMU with
     Secure Boot OVMF, each as one `scripts/dogfood-diskless.sh --check` or
-    `scripts/dogfood-install.sh` call:
+    `scripts/dogfood-install.sh` call. The firmware is Fedora's
+    `edk2-ovmf` (Koji URL + SHA-256 in `build.yml`), not Ubuntu's `ovmf`:
+    Ubuntu 26.04's OVMF 2025.11 rejects systemd-boot's PK enrollment
+    (`Failed to write PK secure boot variable: Security violation`), and
+    until this was caught every CI boot ran in setup mode with Secure Boot
+    off. `--check` now fails unless the probe reports
+    `secureboot=enabled` (or, for tamper runs, the kernel logs
+    `Secure boot enabled`). Bump the pin by hand; Renovate does not track it.
     - diskless netboot, no failed units;
     - `DOGFOOD_TAMPER=raw`: a corrupted DDI must be refused by the manifest
       check (`DOWNLOAD INVALID: Checksum of ... did not check out`);

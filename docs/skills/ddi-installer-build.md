@@ -69,6 +69,10 @@ their images are never published.
 All dogfood paths boot with Secure Boot firmware (OVMF secboot). The firmware
 starts in setup mode; systemd-boot enrolls the dev keys from the ESP
 (`secure-boot-enroll if-safe`) and reboots, so every later boot is verified.
+`--check` fails if the guest did not boot with Secure Boot enabled: some OVMF
+builds (Ubuntu 26.04's 2025.11) refuse the enrollment and would otherwise boot
+on in setup mode, verifying nothing. Point `OVMF_CODE` / `OVMF_VARS` at
+another build (Fedora's `edk2-ovmf` works) if yours does.
 
 ```bash
 just dogfood                     # interactive diskless boot of dist/diskless/
