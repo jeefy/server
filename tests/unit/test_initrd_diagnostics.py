@@ -220,8 +220,20 @@ def env(tmp_path: Path) -> Env:
     return Env(tmp_path)
 
 
-def check_pull(env: Env, url: str) -> subprocess.CompletedProcess:
-    return env.run("check-pull", IMPORT_UNIT, FAKE_DESCRIPTION=f"Download of {url}")
+def check_pull(env: Env, url: str, **extra: str) -> subprocess.CompletedProcess:
+    return env.run("check-pull", IMPORT_UNIT, FAKE_DESCRIPTION=f"Download of {url}", **extra)
+
+
+def cannot_check(reason: str) -> str:
+    return f"BLUEFIN: cannot check that the OS image fits in RAM ({reason}); downloading it anyway"
+
+
+def assert_download_goes_ahead(env: Env, result: subprocess.CompletedProcess, reason: str) -> None:
+    note = cannot_check(reason)
+    assert result.returncode == 0, result.stderr
+    for tty in ("tty0", "ttyS0"):
+        assert env.console(tty) == f"{note}\n"
+    assert f"<4>bluefin-boot-diagnostics: {note}\n" in result.stderr
 
 
 def test_image_that_fits_passes_quietly(env: Env, server) -> None:
@@ -283,44 +295,45 @@ def test_redirects_are_followed_to_the_final_size(env: Env, server) -> None:
     assert "redirect.raw (4000 MiB)" in env.console()
 
 
-def test_missing_image_fails_with_the_http_status(env: Env, server) -> None:
-    base, _ = server
-    result = check_pull(env, f"{base}/missing.raw")
-    assert result.returncode == 1
-    assert "THE OS IMAGE SERVER ANSWERED HTTP 404" in env.console()
-    assert f"URL: {base}/missing.raw" in env.console()
-
-
-@pytest.mark.parametrize("status", [405, 501])
-def test_servers_without_head_are_not_blocked(env: Env, server, status: int) -> None:
+@pytest.mark.parametrize("status", [403, 404, 405, 500, 501])
+def test_head_errors_do_not_block_the_download(env: Env, server, status: int) -> None:
+    # A signed object-store URL covers the method: GET works, HEAD gets 403.
     base, routes = server
-    routes[f"/nohead{status}.raw"] = (status, {"Content-Length": "0"})
-    result = check_pull(env, f"{base}/nohead{status}.raw")
-    assert result.returncode == 0
-    assert "HEAD not supported" in result.stderr
-    assert env.console() == ""
+    routes[f"/head{status}.raw"] = (status, {"Content-Length": "0"})
+    result = check_pull(env, f"{base}/head{status}.raw")
+    assert_download_goes_ahead(env, result, f"HEAD answered HTTP {status}")
 
 
 def test_missing_content_length_skips_the_check(env: Env, server) -> None:
     base, routes = server
     routes["/chunked.raw"] = (200, {"Transfer-Encoding": "chunked"})
     result = check_pull(env, f"{base}/chunked.raw")
-    assert result.returncode == 0
-    assert "no Content-Length" in result.stderr
+    assert_download_goes_ahead(env, result, "HEAD answered HTTP 200 with no Content-Length")
 
 
-def test_unreachable_server_names_the_url_and_the_links(env: Env) -> None:
+def test_unreachable_server_does_not_block_the_download(env: Env) -> None:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
     result = check_pull(env, f"http://127.0.0.1:{port}/img.raw")
-    assert result.returncode == 1
+    assert result.returncode == 0, result.stderr
     text = env.console()
-    assert "CANNOT REACH THE OS IMAGE SERVER" in text
-    assert f"URL: http://127.0.0.1:{port}/img.raw" in text
-    assert "curl: (7)" in text
-    assert "  enp1s0 down (no carrier)" in text
-    assert "lo " not in text
+    assert text.startswith("BLUEFIN: cannot check that the OS image fits in RAM (HEAD failed: curl: (7) ")
+    assert text.endswith("); downloading it anyway\n")
+    assert text.count("\n") == 1
+    assert env.console("tty0") == text
+    assert f"<4>bluefin-boot-diagnostics: {text}" in result.stderr
+
+
+def test_a_broken_check_does_not_block_the_download(env: Env, server) -> None:
+    base, routes = server
+    routes["/broken.raw"] = (200, {"Content-Length": str(540 * MIB)})
+    # A value the check does not expect makes bash abort it (unbound variable).
+    (env.tmp / "meminfo").write_text("MemTotal: 4000000 kB\nMemAvailable: n/a kB\n", encoding="utf-8")
+    result = check_pull(env, f"{base}/broken.raw")
+    assert "unbound variable" in result.stderr
+    assert result.returncode == 0
+    assert env.console() == ""
 
 
 def test_non_http_sources_are_not_checked(env: Env) -> None:
@@ -375,6 +388,13 @@ def test_failure_summary_explains_each_failed_unit(env: Env) -> None:
     assert env.sleeps() == ["60"]
 
 
+def test_failure_summary_blames_ram_for_a_failed_check(env: Env) -> None:
+    env.run("failure-summary", FAKE_FAILED="bluefin-pull-check@run-machines-rootdisk.raw.service")
+    text = env.console()
+    assert "-> the OS image is too big for the RAM of this machine" in text
+    assert "network links:" not in text
+
+
 def test_failure_summary_without_failed_units_points_at_timeouts(env: Env) -> None:
     env.cmdline("root=tmpfs ignition.config.url=http://x/y.ign")
     env.run("failure-summary")
@@ -423,5 +443,5 @@ def test_console_links_point_at_existing_doc_sections() -> None:
         if line.startswith("## ")
     }
     anchors = set(re.findall(r"\$\{DOCS\}#([a-z0-9-]+)", text))
-    assert anchors == {"minimum-ram", "failure-modes", "ignition"}
+    assert anchors == {"minimum-ram", "ignition"}
     assert anchors <= slugs

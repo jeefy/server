@@ -9,8 +9,10 @@ DefaultDependencies=no
 Wants=network-online.target
 After=network-online.target
 
-# Print why on the console and reboot (emergency.service.d/10-reboot.conf)
-# rather than start a download that cannot fit.
+# The check fails only when the server gives a size that cannot fit in RAM:
+# print why on the console and reboot (emergency.service.d/10-reboot.conf)
+# rather than start that download. When it cannot check the size, it notes
+# that on the console and succeeds, and the download runs.
 OnFailure=emergency.target
 OnFailureJobMode=isolate
 

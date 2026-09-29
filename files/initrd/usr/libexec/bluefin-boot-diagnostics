@@ -3,8 +3,11 @@
 #
 #   check-pull UNIT   Run before UNIT (a systemd-import@.service instance)
 #                     downloads the OS image into RAM. HEADs the image URL and
-#                     fails with a plain "needs ~X MiB RAM, have Y" message if
-#                     the image cannot fit, or if the server cannot be reached.
+#                     fails with a plain "needs ~X MiB RAM, have Y" message
+#                     only when a 2xx answer gives a size that cannot fit. If
+#                     it cannot check (no answer, an HTTP error, no
+#                     Content-Length), it prints a note and exits 0 so the
+#                     download still runs.
 #   ignition-kargs    Warn that ignition.* kernel arguments are ignored.
 #   failure-summary   ExecStart of emergency.service: print the failed units,
 #                     their last log lines and the last errors, then wait
@@ -33,6 +36,10 @@ NETDIR="${BLUEFIN_DIAG_NETDIR:-/sys/class/net}"
 PULL_DIR=/run
 # Room /run and RAM must keep after the image has landed.
 MARGIN_MIB=64
+# check_pull's status when the image cannot fit. It differs from bash's own
+# error statuses (1, 2, 126, 127, 128+n), so a bug in the check is never
+# taken for "does not fit".
+TOO_BIG=3
 DELAY_NAME=bluefin.failure_delay
 DEFAULT_DELAY=60
 # The reboot is intentional (unattended retry, boot counting); a floor keeps
@@ -92,6 +99,15 @@ links() {
   fi
 }
 
+# cannot_check REASON: note on the consoles that the size was not checked. The
+# download goes ahead: it may still work (a signed object-store URL can refuse
+# HEAD and serve GET), and if it fails the failure summary says why.
+cannot_check() {
+  local msg="BLUEFIN: cannot check that the OS image fits in RAM ($1); downloading it anyway"
+  log 4 "${msg}"
+  printf '%s\n' "${msg}" | to_consoles
+}
+
 check_pull() {
   local unit="${1:?usage: ${PROG} check-pull <systemd-import@...service>}"
   local desc url out rc status='' len='' line lower
@@ -105,17 +121,13 @@ check_pull() {
     *) log 6 "${unit}: no http(s) source (${desc:-no description}); nothing to check"; return 0 ;;
   esac
 
+  # Only the size is wanted here; whether the image downloads is for
+  # systemd-import to find out.
   out="$(curl -sSIL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 120 "${url}" 2>&1)"
   rc=$?
   if [ "${rc}" -ne 0 ]; then
-    local -a netlines
-    mapfile -t netlines < <(links)
-    shout 3 "BLUEFIN: CANNOT REACH THE OS IMAGE SERVER" \
-      "URL: ${url}" \
-      "${out##*$'\n'}" \
-      "Network links:" "${netlines[@]/#/  }" \
-      "Check the cable, DHCP and the boot server. ${DOCS}#failure-modes"
-    return 1
+    cannot_check "HEAD failed: ${out##*$'\n'}"
+    return 0
   fi
 
   # Headers of every response in the redirect chain; keep the last one.
@@ -130,26 +142,19 @@ check_pull() {
 
   case "${status}" in
     2??) ;;
-    405|501)
-      log 4 "${url}: HEAD not supported (HTTP ${status}); cannot check the image size"
-      return 0 ;;
-    *)
-      shout 3 "BLUEFIN: THE OS IMAGE SERVER ANSWERED HTTP ${status:-?}" \
-        "URL: ${url}" \
-        "The boot server must serve the OS image next to the netboot UKI. ${DOCS}#failure-modes"
-      return 1 ;;
+    *) cannot_check "HEAD answered HTTP ${status:-?}"; return 0 ;;
   esac
   if ! [[ "${len}" =~ ^[0-9]+$ ]]; then
-    log 4 "${url}: no Content-Length; cannot check the image size"
+    cannot_check "HEAD answered HTTP ${status} with no Content-Length"
     return 0
   fi
 
   local total_kib avail_kib bavail bsize btotal
-  total_kib="$(meminfo_kib MemTotal)" || { log 4 "no MemTotal in ${MEMINFO}"; return 0; }
+  total_kib="$(meminfo_kib MemTotal)" || { cannot_check "no MemTotal in ${MEMINFO}"; return 0; }
   avail_kib="$(meminfo_kib MemAvailable)" || avail_kib="${total_kib}"
   read -r bavail bsize btotal < <(stat -f -c '%a %S %b' "${PULL_DIR}")
   if ! [[ "${bavail:-}${bsize:-}${btotal:-}" =~ ^[0-9]+$ ]] || [ "${btotal}" -eq 0 ] || [ "${total_kib}" -eq 0 ]; then
-    log 4 "cannot read the size of ${PULL_DIR} or of RAM; skipping the RAM check"
+    cannot_check "cannot read the size of ${PULL_DIR} or of RAM"
     return 0
   fi
 
@@ -175,7 +180,7 @@ check_pull() {
     "The OS image ${url##*/} ($(mib "${len}") MiB) is downloaded into /run, a RAM" \
     "file system capped at $(( run_size * 100 / total ))% of RAM: $(mib "${run_free}") MiB free there, MemAvailable $(mib "${avail}") MiB." \
     "Add RAM or install to disk. ${DOCS}#minimum-ram"
-  return 1
+  return "${TOO_BIG}"
 }
 
 # Keys of ignition.* kernel arguments (values may carry secrets).
@@ -206,7 +211,7 @@ hint() {
   local stage
   case "$1" in
     bluefin-pull-check@*)
-      echo "the OS image cannot be downloaded into RAM (see the message above)" ;;
+      echo "the OS image is too big for the RAM of this machine (see the message above)" ;;
     systemd-import@*)
       echo "downloading or verifying the OS image failed: server reachable? SHA256SUMS signed by a key this image trusts? room in /run?" ;;
     systemd-loop@*)
@@ -268,7 +273,7 @@ failure_summary() {
       case "${unit}" in systemd-import@*) matches+=(_SYSTEMD_UNIT=systemd-importd.service) ;; esac
       journalctl -b "${matches[@]}" -n 6 -o cat --no-pager 2>/dev/null | indent '  | '
       case "${unit}" in
-        systemd-networkd-wait-online.service|systemd-import@*|bluefin-pull-check@*)
+        systemd-networkd-wait-online.service|systemd-import@*)
           printf '  network links:\n'; links | indent '    ' ;;
       esac
     done
@@ -285,7 +290,14 @@ failure_summary() {
 }
 
 case "${1:-}" in
-  check-pull) shift; check_pull "$@" ;;
+  check-pull)
+    shift
+    # Only "the image cannot fit" fails the unit, and so stops the boot. The
+    # check runs in a subshell so that a bug in it (an unset variable, a value
+    # it did not expect) lets the download go ahead instead.
+    rc=0
+    ( check_pull "$@" ) || rc=$?
+    [ "${rc}" -ne "${TOO_BIG}" ] || exit 1 ;;
   ignition-kargs) ignition_kargs ;;
   failure-summary) failure_summary ;;
   *) printf 'usage: %s check-pull UNIT | ignition-kargs | failure-summary\n' "${PROG}" >&2; exit 2 ;;
