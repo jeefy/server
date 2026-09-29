@@ -118,7 +118,7 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 |-----|----------|---------|---------|
 | `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` + `gnome-build-meta.bst` junction refs, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
 | `changes` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Decides whether `build` and `boot-test` run: always outside pull requests; on a pull request only if `.github/scripts/image-build-needed.py` finds a changed path that can reach the image set or the boot test (see [Build time and caches](#build-time-and-caches)). `contents: read` + `pull-requests: read`. |
-| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there, and it pushes to the BuildStream cache when the CASD identity is configured. Off `main` it also exports two higher-versioned sets (`<ver>.1`, `<ver>.2`) for the update test. Read-only token. |
+| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there, and it pushes to the BuildStream cache when the CASD identity is configured. Off `main` it also exports two higher-versioned sets (`1.<run>.1`, `1.<run>.2`) for the update test. Read-only token. |
 | `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Runs the Secure Boot QEMU checks on the exported sets (see Core Process step 4). Read-only token. |
 | `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`) (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). `contents: write` + `packages: write`. |
 | `docs` | `docs-checks.yml` | `pull_request`, `push/main` | Runs markdown and skill metadata checks via `docs-checks.py`. Read-only token. |
@@ -146,16 +146,21 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
     Secure Boot OVMF, each as one `scripts/dogfood-diskless.sh --check` or
     `scripts/dogfood-install.sh` call:
     - diskless netboot, no failed units;
-    - `DOGFOOD_TAMPER=raw` and `=sums`: the initrd must refuse a corrupted DDI
-      and a re-hashed, unsigned `SHA256SUMS` after fetching the image and the
-      signed manifest (the pull's own messages are copied to the serial log);
+    - `DOGFOOD_TAMPER=raw`: a corrupted DDI must be refused by the manifest
+      check (`DOWNLOAD INVALID: Checksum of ... did not check out`);
+      `DOGFOOD_TAMPER=sums`: the same DDI with `SHA256SUMS` re-hashed to match
+      it must be refused by the signature check (`DOWNLOAD INVALID: Signature
+      verification failed`). Both only after the image, `SHA256SUMS` and
+      `SHA256SUMS.gpg` were served, and nothing may boot;
     - Ignition from the `ignition.config` credential, and UEFI HTTP boot with
       `bluefin-node.ign` served next to the UKI, both with
       `tests/fixtures/ignition/apply-marker.ign`: the probe must see the
       written file and the Ignition-enabled unit active (`DOGFOOD_EXPECT`);
     - on `main`: diskless boot, `systemd-sysinstall` to disk, boot the disk;
-    - off `main`: the same, then `systemd-sysupdate` A->B to `<ver>.1` and a
-      boot-counted rollback from a corrupted `<ver>.2`. Main skips this
+    - off `main`: the same, then `systemd-sysupdate` A->B to `1.<run>.1` and
+      a boot-counted rollback from a corrupted `1.<run>.2` (see
+      [ddi-installer-build.md](ddi-installer-build.md) for why not
+      `0.<run>.N`). Main skips this
       because its extra sets would be release-signed versions nobody
       publishes; every change reaches main through a pull request that ran it.
  5. **Version Derivation:** The release version is set per build with

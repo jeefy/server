@@ -98,10 +98,12 @@ Useful environment variables:
 - `DOGFOOD_NODE_IGN=<file>` — serve it as `bluefin-node.ign` next to the UKI
   (picked up by HTTP-booted nodes with no Ignition credential).
 - `DOGFOOD_SERVE_EXTRA=<dir>` — also serve the files in `<dir>`.
-- `DOGFOOD_TAMPER=raw|sums` — serve a corrupted DDI or a re-hashed, unsigned
-  `SHA256SUMS`. `--check` then passes only if the initrd's pull fails after
-  the image, `SHA256SUMS` and `SHA256SUMS.gpg` were served, and nothing
-  booted; the pull's own messages are copied to the serial log.
+- `DOGFOOD_TAMPER=raw|sums` — serve a corrupted DDI (`raw`), or the corrupted
+  DDI with `SHA256SUMS` re-hashed to match it, so only `SHA256SUMS.gpg` no
+  longer fits (`sums`). `--check` then passes only if the initrd's pull
+  refuses it for that reason (checksum mismatch, bad signature) after the
+  image and both manifest files were served, and nothing booted. Credential
+  drop-ins copy `systemd-importd`'s messages to the serial console.
 - `DOGFOOD_EXTRA_PROBE=<file>` — shell snippet appended to the in-guest probe.
 - `DOGFOOD_EXPECT=<ERE>` — `--check` also requires the probe output to match,
   e.g. with `tests/fixtures/ignition/apply-marker.ign` and its `.probe`:
@@ -117,9 +119,13 @@ the OS in lock-step), and with `<broken-dir>` corrupt the updated slot and
 confirm boot counting rolls the node back to `<next-dir>` on its own, with the
 matching ZFS sysext still merged. `<next-dir>` and `<broken-dir>` are
 ordinary image sets with higher versions, e.g.
-`just set-version <ver>.1 && just export-image dist/diskless-next` (and
-`.2` into `dist/diskless-broken`); the script corrupts the broken slot
-itself. Which of these scenarios CI runs is listed in
+`just set-version <next> && just export-image dist/diskless-next` (and a
+higher one into `dist/diskless-broken`); the script corrupts the broken slot
+itself. The versions must also sort above `1.<ver>` for systemd-boot: the
+Type #1 entry `systemd-sysinstall` writes for the installed image carries
+`version 1.<ver>` (`bluefin-server-commit_1.<ver>.conf`), so after
+installing `0.674` an update to `0.674.1` still boots `0.674`; use `1.674.1`.
+Release versions (`YY.MM.<run>`) sort above it. Which of these scenarios CI runs is listed in
 [ci-tooling.md](ci-tooling.md) (the `boot-test` job).
 
 ## Local builds with a remote cache
