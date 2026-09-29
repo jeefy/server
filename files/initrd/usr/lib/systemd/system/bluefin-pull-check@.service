@@ -3,7 +3,7 @@ Description=Check that the OS image fits in RAM before downloading it
 Documentation=file:/usr/libexec/bluefin-boot-diagnostics
 ConditionPathExists=/etc/initrd-release
 DefaultDependencies=no
-# Pulled in and ordered before systemd-import@%i.service by its drop-in
+# Wanted by, and ordered before, systemd-import@%i.service through its drop-in
 # systemd-import@.service.d/10-bluefin-pull-check.conf. Needs the network,
 # like the download itself.
 Wants=network-online.target

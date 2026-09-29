@@ -56,7 +56,9 @@ def test_emergency_prints_the_summary_then_reboots() -> None:
 
 def test_every_download_is_preceded_by_the_ram_check() -> None:
     u = unit(UNITS / "systemd-import@.service.d" / "10-bluefin-pull-check.conf")
-    assert u["Unit"]["Requires"] == ["bluefin-pull-check@%i.service"]
+    # Only the check's own OnFailure= may stop the boot; its failure never fails the download.
+    assert u["Unit"]["Wants"] == ["bluefin-pull-check@%i.service"]
+    assert "Requires" not in u["Unit"]
     assert u["Unit"]["After"] == ["bluefin-pull-check@%i.service"]
     # A failed download goes straight to the summary, not a 300 s device timeout.
     assert u["Unit"]["OnFailure"] == ["emergency.target"]
