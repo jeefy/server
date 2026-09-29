@@ -63,6 +63,7 @@ All local `just` targets run BuildStream inside the FSDK `bst2` container via `j
 | Task | Skill |
 |---|---|
 | Boot / install / update architecture and local build + dogfood | [`docs/skills/ddi-installer.md`](docs/skills/ddi-installer.md), [`docs/skills/ddi-installer-build.md`](docs/skills/ddi-installer-build.md) |
+| Diskless boot failures, RAM sizing, node logs, Ignition configs | [`docs/skills/diskless-troubleshooting.md`](docs/skills/diskless-troubleshooting.md) |
 | Factory role, k0s sysext rationale, lab integration | [`docs/skills/factory-integration.md`](docs/skills/factory-integration.md) |
 | Work with `systemd-sysext` / `systemd-confext` | [`docs/skills/systemd-sysext-extensions.md`](docs/skills/systemd-sysext-extensions.md) |
 | Build or run the kubeadm worker sysext | [`docs/skills/kubeadm-sysext.md`](docs/skills/kubeadm-sysext.md) |
@@ -70,7 +71,7 @@ All local `just` targets run BuildStream inside the FSDK `bst2` container via `j
 | Update the FSDK pin / versioning | [`docs/skills/bump-fsdk-version.md`](docs/skills/bump-fsdk-version.md) |
 | CI workflows, action SHA pinning | [`docs/skills/ci-tooling.md`](docs/skills/ci-tooling.md) |
 | Release signing / sysupdate trust | [`docs/skills/systemd-sysupdate-verification.md`](docs/skills/systemd-sysupdate-verification.md) |
-| Credential sealing with TPM2 | [`docs/skills/tpm2-credential-sealing.md`](docs/skills/tpm2-credential-sealing.md) |
+| Node access (root / SSH) and credential sealing with TPM2 | [`docs/skills/tpm2-credential-sealing.md`](docs/skills/tpm2-credential-sealing.md) |
 | System containers (`machinectl`) | [`docs/skills/system-containers.md`](docs/skills/system-containers.md) |
 | Cut bloat / avoid over-engineering | [`docs/skills/avoid-over-engineering.md`](docs/skills/avoid-over-engineering.md) |
 | Add or refactor skills | [`docs/skills/skill-improvement.md`](docs/skills/skill-improvement.md) |

@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-29"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -69,6 +69,10 @@ their images are never published.
 All dogfood paths boot with Secure Boot firmware (OVMF secboot). The firmware
 starts in setup mode; systemd-boot enrolls the dev keys from the ESP
 (`secure-boot-enroll if-safe`) and reboots, so every later boot is verified.
+`--check` fails if the guest did not boot with Secure Boot enabled: some OVMF
+builds (Ubuntu 26.04's 2025.11) refuse the enrollment and would otherwise boot
+on in setup mode, verifying nothing. Point `OVMF_CODE` / `OVMF_VARS` at
+another build (Fedora's `edk2-ovmf` works) if yours does.
 
 ```bash
 just dogfood                     # interactive diskless boot of dist/diskless/
@@ -87,6 +91,8 @@ Useful environment variables:
 
 - `DOGFOOD_IGNITION=<file>` — pass an Ignition config as the `ignition.config`
   credential (see `tests/fixtures/ignition/var-on-disk.ign`).
+- `DOGFOOD_CREDS=<dir>` — pass every file in `<dir>` as a system credential
+  named after the file (SMBIOS type 11).
 - `DOGFOOD_STATE_DISK=<file>` — attach a persistent second disk (`/dev/vdb`).
 - `DOGFOOD_VARS=<file>` — persistent UEFI variable store (keeps enrolled keys
   across runs).
@@ -99,20 +105,53 @@ Useful environment variables:
 - `DOGFOOD_NODE_IGN=<file>` — serve it as `bluefin-node.ign` next to the UKI
   (picked up by HTTP-booted nodes with no Ignition credential).
 - `DOGFOOD_SERVE_EXTRA=<dir>` — also serve the files in `<dir>`.
-- `DOGFOOD_TAMPER=raw|sums` — serve a corrupted DDI or a re-hashed, unsigned
-  `SHA256SUMS`; the boot must fail, proving the signature check.
+- `DOGFOOD_TAMPER=raw|sums` — serve a corrupted DDI (`raw`), or the corrupted
+  DDI with `SHA256SUMS` re-hashed to match it, so only `SHA256SUMS.gpg` no
+  longer fits (`sums`). `--check` then passes only if the initrd's pull
+  refuses it for that reason (checksum mismatch, bad signature) after the
+  image and both manifest files were served, and nothing booted. Credential
+  drop-ins copy `systemd-importd`'s messages to the serial console.
+- `DOGFOOD_MEM=<MiB>` — guest RAM (default 4096); below the diskless minimum
+  the boot must fail with the RAM message (see `diskless-troubleshooting.md`).
 - `DOGFOOD_EXTRA_PROBE=<file>` — shell snippet appended to the in-guest probe.
+- `DOGFOOD_EXPECT=<ERE>` — `--check` also requires the probe output to match,
+  e.g. with `tests/fixtures/ignition/apply-marker.ign` and its `.probe`:
+  `PROBE ignition marker=applied unit=active enabled=enabled ran=yes`.
+- `DOGFOOD_PORT`, `DOGFOOD_MEM`, `DOGFOOD_TIMEOUT` — HTTP port (8765), guest
+  memory in MiB (4096), `--check` deadline in seconds (600).
+
+Every diskless `--check` boot also runs `bluefin-diskless-update-check` once
+and reports `PROBE update-check=<result> flag=<set|none>`. Its origin is the
+versioned `import.pull` file, so a newer release in the served directory only
+logs that the node is pinned; an HTTP boot through a fixed-name UKI
+(`DOGFOOD_BOOT=http`, `DOGFOOD_BOOT_URL=.../bluefin-server-netboot.efi`)
+sets the flag.
 
 `scripts/dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]` is the full
 end-to-end check: install from a diskless boot, boot the installed disk,
-`systemd-sysupdate` A->B to `<next-dir>` with the default `Verify=yes` against
-the signed manifest (with the `zfs` feature enabled, so the ZFS sysext follows
-the OS in lock-step), and with `<broken-dir>` corrupt the updated slot and
-confirm boot counting rolls the node back to `<next-dir>` on its own, with the
-matching ZFS sysext still merged. CI runs the first two stages
-(`dogfood-diskless.sh --check`, `dogfood-install.sh dist/diskless`) as the
-`boot-test` job in `.github/workflows/build.yml` on every pull request and
-push to main.
+`systemd-sysupdate` A->B to `<next-dir>` through `systemd-sysupdate.service`
+(the unit the timer starts) with the default `Verify=yes` against the signed
+manifest (with the `zfs` feature enabled, so the ZFS sysext follows the OS in
+lock-step), then asserts the kured flag, the Kubernetes reboot interlock, both
+timers enabled and the new UKI blessed after `boot-complete.target`, and with
+`<broken-dir>` break the update and confirm boot counting rolls the node back
+to `<next-dir>` on its own, with the matching ZFS sysext still merged.
+`DOGFOOD_BROKEN=slot` (default) corrupts the updated usr slot, so the initrd
+fails. `DOGFOOD_BROKEN=unit` adds a unit that fails on `<broken-dir>`'s version
+only and shortens the boot deadline (`DOGFOOD_DEADLINE`, default `2min`): each
+counted boot reaches `multi-user.target`, misses `boot-complete.target`, and
+`bluefin-boot-deadline` reboots it. The run asserts three such boots, the
+fallback boot with the deadline timer inactive, and then no kured flag and a
+skipped `systemd-sysupdate-reboot.service` for the failed version. `<next-dir>` and `<broken-dir>` are
+ordinary image sets with higher versions, e.g.
+`just set-version <next> && just export-image dist/diskless-next` (and a
+higher one into `dist/diskless-broken`); the script breaks the
+broken set itself. The versions must also sort above `1.<ver>` for systemd-boot: the
+Type #1 entry `systemd-sysinstall` writes for the installed image carries
+`version 1.<ver>` (`bluefin-server-commit_1.<ver>.conf`), so after
+installing `0.674` an update to `0.674.1` still boots `0.674`; use `1.674.1`.
+Release versions (`YY.MM.<run>`) sort above it. Which of these scenarios CI runs is listed in
+[ci-tooling.md](ci-tooling.md) (the `boot-test` job).
 
 ## Local builds with a remote cache
 
@@ -146,7 +185,7 @@ nodes may already trust.
 | "Skip `gen-dev-keys`, the build has defaults." | Signing needs real key material in `files/boot-keys/`; the recipe generates throwaway keys so local builds boot under Secure Boot. |
 | "Test the UKI with `-kernel`/`-initrd`." | That bypasses the signed boot chain. The dogfood scripts boot the netboot ESP or installed disk through OVMF the way firmware does. |
 | "Reboot loops mean the boot hung." | With Secure Boot in setup mode the first boot enrolls keys and reboots; that is expected once per fresh variable store. |
-| "A failed update needs manual recovery." | Boot counting handles it: three failed boots of the new UKI and systemd-boot falls back to the previous image. `dogfood-install.sh <dir> <next> <broken>` proves it. |
+| "A failed update needs manual recovery." | Boot counting handles it: three failed boots of the new UKI and systemd-boot falls back to the previous image; `bluefin-boot-deadline` reboots a boot that comes up with a failed unit. `dogfood-install.sh <dir> <next> <broken>` proves it (`DOGFOOD_BROKEN=unit` for the failed-unit case). |
 | "`chmod 4755` in install-commands makes a file setuid in the image." | No. BuildStream artifacts keep one executable bit per file, so every staged file is 0644/0755. FSDK components declare their special modes as initial scripts, and `oci/bluefin-server-usr.bst` runs them (`os-initial-scripts.bst`) while assembling /sysroot; special modes must be set in the `script` element that writes the image. |
 
 ## Red flags
