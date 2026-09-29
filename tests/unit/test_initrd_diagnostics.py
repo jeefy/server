@@ -54,6 +54,27 @@ def test_emergency_prints_the_summary_then_reboots() -> None:
     assert u["Service"]["Type"] == ["idle"]
 
 
+def test_every_download_is_preceded_by_the_ram_check() -> None:
+    u = unit(UNITS / "systemd-import@.service.d" / "10-bluefin-pull-check.conf")
+    assert u["Unit"]["Requires"] == ["bluefin-pull-check@%i.service"]
+    assert u["Unit"]["After"] == ["bluefin-pull-check@%i.service"]
+    # A failed download goes straight to the summary, not a 300 s device timeout.
+    assert u["Unit"]["OnFailure"] == ["emergency.target"]
+    assert u["Unit"]["OnFailureJobMode"] == ["isolate"]
+
+
+def test_ram_check_unit_checks_its_import_instance() -> None:
+    u = unit(UNITS / "bluefin-pull-check@.service")
+    assert u["Unit"]["ConditionPathExists"] == ["/etc/initrd-release"]
+    assert u["Unit"]["DefaultDependencies"] == ["no"]
+    assert "network-online.target" in u["Unit"]["After"]
+    assert u["Unit"]["OnFailure"] == ["emergency.target"]
+    assert u["Unit"]["OnFailureJobMode"] == ["isolate"]
+    assert u["Service"]["ExecStart"] == [
+        "/usr/libexec/bluefin-boot-diagnostics check-pull systemd-import@%i.service"
+    ]
+
+
 @pytest.mark.parametrize("stage", ["fetch-offline", "fetch", "disks", "mount", "files"])
 def test_ignition_failures_reach_the_summary(stage: str) -> None:
     u = unit(IGN_UNITS / f"ignition-{stage}.service")
