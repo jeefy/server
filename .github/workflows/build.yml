@@ -18,7 +18,46 @@ permissions:
   contents: read
 
 jobs:
+  # Pull requests that cannot change the image set or the boot test (docs,
+  # unit tests, other workflows; see .github/scripts/image-build-needed.py)
+  # skip the ~2 h build. A skipped job reports as passing, so `build` and
+  # `boot-test` can be required checks without blocking those PRs.
+  changes:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # lists the pull request's changed files
+    outputs:
+      image: ${{ steps.decide.outputs.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          sparse-checkout: .github/scripts
+
+      - name: Decide whether to build the image set
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != pull_request ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" \
+            --jq '.[] | .filename, (.previous_filename // empty)' > "${RUNNER_TEMP}/changed.txt"
+          image="$(python3 .github/scripts/image-build-needed.py < "${RUNNER_TEMP}/changed.txt")"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "Image build needed: ${image}"
+
   build:
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 300
     outputs:
@@ -102,6 +141,37 @@ jobs:
           mkdir -p ~/.cache
           ln -sf /mnt/buildstream ~/.cache/buildstream
 
+      # Opt-in: with the CASD client identity configured (repository variable
+      # CASD_CLIENT_CERT, secret CASD_CLIENT_KEY), builds on main push their
+      # artifacts to the shared BuildStream cache so later builds pull them.
+      # Without it, and always on pull requests, the caches stay pull-only.
+      - name: Configure BuildStream cache push
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          CASD_CLIENT_CERT: ${{ vars.CASD_CLIENT_CERT }}
+          CASD_CLIENT_KEY: ${{ secrets.CASD_CLIENT_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CASD_CLIENT_CERT}" ] || [ -z "${CASD_CLIENT_KEY}" ]; then
+            echo "No CASD client identity configured; not pushing to the BuildStream cache."
+            exit 0
+          fi
+          umask 077
+          mkdir -p .bst-push
+          printf '%s\n' "${CASD_CLIENT_CERT}" > .bst-push/client.crt
+          printf '%s\n' "${CASD_CLIENT_KEY}" > .bst-push/client.key
+          cat > .bst-push/buildstream.conf <<'EOF'
+          artifacts:
+            override-project-caches: false
+            servers:
+            - url: https://cache.projectbluefin.io:11002
+              push: true
+              auth:
+                client-cert: /src/.bst-push/client.crt
+                client-key: /src/.bst-push/client.key
+          EOF
+          echo "BST_PUSH_CONFIG=/src/.bst-push/buildstream.conf" >> "$GITHUB_ENV"
+
       - name: Build and export the image set
         run: just export-image
 
@@ -115,12 +185,55 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # Best effort: a cache outage must not fail a release build. --deps all
+      # reaches the kernel, which FSDK's caches never hold for our module
+      # certificate and which dominates the build time.
+      - name: Push artifacts to the BuildStream cache
+        if: env.BST_PUSH_CONFIG != ''
+        continue-on-error: true
+        env:
+          BST_FLAGS: --config ${{ env.BST_PUSH_CONFIG }}
+        run: just bst artifact push --deps all oci/bluefin-server-image.bst
+
+      - name: Remove the BuildStream cache identity
+        if: always()
+        run: rm -rf .bst-push
+
+      # The A/B update and boot-counted rollback test needs two more image
+      # sets that sort above this one under strverscmp(). Only the version
+      # differs, so each is a warm rebuild of the version-stamped elements.
+      # Not on main: these would be release-signed versions nobody publishes.
+      - name: Build the next and broken image sets
+        if: github.ref != 'refs/heads/main'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          just set-version "${VERSION}.1"
+          just export-image dist/diskless-next
+          just set-version "${VERSION}.2"
+          just export-image dist/diskless-broken
+
+      - name: Upload update test image sets
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-update
+          path: |
+            dist/diskless-next/
+            dist/diskless-broken/
+            !dist/*/bluefin-server-installer_*.raw
+          if-no-files-found: error
+          retention-days: 1
+
   # Secure Boot QEMU boots of the built images: diskless (network pull,
-  # dm-verity /usr, tmpfs root) and diskless -> systemd-sysinstall -> disk.
+  # dm-verity /usr, tmpfs root), refusal of a tampered image or manifest,
+  # UEFI HTTP boot, Ignition applying a config, and diskless ->
+  # systemd-sysinstall -> disk; off main also A/B update and rollback.
   boot-test:
     needs: build
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,6 +247,13 @@ jobs:
           name: image
           path: dist/diskless
 
+      - name: Download update test image sets
+        if: github.ref != 'refs/heads/main'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: image-update
+          path: dist
+
       - name: Install QEMU and OVMF
         run: |
           set -euo pipefail
@@ -144,8 +264,49 @@ jobs:
       - name: Diskless boot
         run: bash scripts/dogfood-diskless.sh dist/diskless --check
 
+      - name: Refuse a tampered image
+        env:
+          DOGFOOD_TAMPER: raw
+        run: bash scripts/dogfood-diskless.sh dist/diskless --check
+
+      - name: Refuse an unsigned manifest
+        env:
+          DOGFOOD_TAMPER: sums
+        run: bash scripts/dogfood-diskless.sh dist/diskless --check
+
+      - name: Ignition config from a credential
+        env:
+          DOGFOOD_IGNITION: tests/fixtures/ignition/apply-marker.ign
+          DOGFOOD_EXTRA_PROBE: tests/fixtures/ignition/apply-marker.probe
+          DOGFOOD_EXPECT: "PROBE ignition marker=applied unit=active enabled=enabled ran=yes"
+        run: bash scripts/dogfood-diskless.sh dist/diskless --check
+
+      - name: UEFI HTTP boot with bluefin-node.ign
+        env:
+          DOGFOOD_BOOT: http
+          DOGFOOD_NODE_IGN: tests/fixtures/ignition/apply-marker.ign
+          DOGFOOD_EXTRA_PROBE: tests/fixtures/ignition/apply-marker.probe
+          DOGFOOD_EXPECT: "PROBE ignition marker=applied unit=active enabled=enabled ran=yes"
+        run: bash scripts/dogfood-diskless.sh dist/diskless --check
+
       - name: Install to disk and boot it
+        if: github.ref == 'refs/heads/main'
         run: bash scripts/dogfood-install.sh dist/diskless
+
+      - name: Install, A/B update and boot-counted rollback
+        if: github.ref != 'refs/heads/main'
+        run: bash scripts/dogfood-install.sh dist/diskless dist/diskless-next dist/diskless-broken
+
+      - name: Upload boot logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: boot-test-logs
+          path: |
+            dist/*/dogfood-*.log
+            dist/dogfood-install/*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Publishes the signed image set as a new, immutable GitHub Release and as
   # an ORAS OCI artifact (one layer per file, tags <version> and latest).
