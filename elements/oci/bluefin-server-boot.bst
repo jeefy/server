@@ -165,6 +165,8 @@ config:
     rm -rf usr/share/man usr/share/doc usr/share/info usr/include usr/lib/*/pkgconfig
     find . -name '*.a' -delete
     du -sh /initrd
+    # cpio records mtimes; everything created above carries the build time.
+    find . -mindepth 1 -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +
     find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort | cpio -o -H newc --reproducible --quiet | zstd -19 -T0 -q > /tmp/initrd.cpio.zst
     ls -lh /tmp/initrd.cpio.zst
 
