@@ -200,18 +200,20 @@ jobs:
         run: rm -rf .bst-push
 
       # The A/B update and boot-counted rollback test needs two more image
-      # sets that sort above this one under strverscmp(). Only the version
-      # differs, so each is a warm rebuild of the version-stamped elements.
-      # Not on main: these would be release-signed versions nobody publishes.
+      # sets that sort above this one. Only the version differs, so each is a
+      # warm rebuild of the version-stamped elements. Not on main: these would
+      # be release-signed versions nobody publishes.
+      # 1.<run>.N, not 0.<run>.N: systemd-sysinstall's boot entry for the
+      # installed 0.<run> carries `version 1.0.<run>`, and systemd-boot would
+      # keep defaulting to it over a 0.<run>.N update. 1.<run>.N sorts above
+      # both and still below every release (YY.MM.<run>).
       - name: Build the next and broken image sets
         if: github.ref != 'refs/heads/main'
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          just set-version "${VERSION}.1"
+          just set-version "1.${GITHUB_RUN_NUMBER}.1"
           just export-image dist/diskless-next
-          just set-version "${VERSION}.2"
+          just set-version "1.${GITHUB_RUN_NUMBER}.2"
           just export-image dist/diskless-broken
 
       - name: Upload update test image sets
