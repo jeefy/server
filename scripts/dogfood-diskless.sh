@@ -9,8 +9,13 @@
 # is handed over as the import.pull system credential via SMBIOS.
 #
 # Usage: dogfood-diskless.sh <dir with .raw/.efi/.esp.raw> [--check]
-#   --check  headless: boot, run a probe, exit 0 if no unit failed
+#   --check  headless: boot, run a probe, exit 0 if no unit failed. With
+#            DOGFOOD_TAMPER set, exit 0 only if the initrd refuses the image.
 # Environment:
+#   DOGFOOD_PORT=<port>        HTTP port for the built-in server (default 8765)
+#   DOGFOOD_MEM=<MiB>          guest memory (default 4096)
+#   DOGFOOD_TIMEOUT=<seconds>  --check deadline (default 600)
+#   DOGFOOD_EXPECT=<ERE>       --check also requires the probe output to match
 #   DOGFOOD_IGNITION=<file>    pass an Ignition config as the ignition.config credential
 #   DOGFOOD_STATE_DISK=<file>  attach a persistent second disk (/dev/vdb), created if missing
 #   DOGFOOD_EXTRA_PROBE=<file> shell snippet appended to the in-guest probe
@@ -21,7 +26,8 @@
 #   DOGFOOD_BOOT_URL=<url>     HTTP boot from another server (e.g. Booty) instead
 #   DOGFOOD_NODE_IGN=<file>    serve it as bluefin-node.ign next to the UKI (HTTP boot)
 #   DOGFOOD_SERVE_EXTRA=<dir>  also serve the files in <dir>
-#   DOGFOOD_TAMPER=raw|sums    serve a corrupted image or a re-hashed, unsigned manifest
+#   DOGFOOD_TAMPER=raw|sums    serve a corrupted image or a re-hashed, unsigned manifest;
+#                              --check then passes only if the initrd refuses it
 set -euo pipefail
 
 dir="$(realpath "${1:?usage: $0 <artifact dir> [--check]}")"
@@ -48,7 +54,9 @@ vars_tmpl="${OVMF_VARS:-$(first_existing \
     /usr/share/edk2/x64/OVMF_VARS.4m.fd)}" || { echo "ERROR: no blank OVMF_VARS found (set OVMF_VARS)" >&2; exit 1; }
 
 work="$(mktemp -d /tmp/bluefin-dogfood.XXXXXX)"
-trap 'kill "${http_pid:-0}" 2>/dev/null || true; rm -rf "${work}"' EXIT
+# Never leave a guest behind: an orphaned QEMU keeps its port and the caller's
+# locks. Only kill PIDs that are set; `kill 0` signals the whole process group.
+trap 'for p in ${qemu_pid:-} ${enroll_pid:-} ${http_pid:-}; do kill "${p}" 2>/dev/null || true; done; rm -rf "${work}"' EXIT
 vars="${DOGFOOD_VARS:-${work}/vars.fd}"
 [ -f "${vars}" ] || cp "${vars_tmpl}" "${vars}"
 cp "${esp}" "${work}/esp.raw"
@@ -73,6 +81,19 @@ http_pid=$!
 
 cred() { printf 'type=11,value=io.systemd.credential.binary:%s=%s' "$1" "$(base64 -w0 < "$2")"; }
 
+# wait_for <seconds> <pid> <command...>: poll the command once a second until
+# it succeeds (0), or the process exits or the time runs out (1).
+wait_for() {
+    local deadline=$(( $(date +%s) + $1 )) pid="$2"
+    shift 2
+    while [ "$(date +%s)" -lt "${deadline}" ]; do
+        "$@" && return 0
+        kill -0 "${pid}" 2>/dev/null || { "$@"; return; }
+        sleep 1
+    done
+    return 1
+}
+
 printf 'raw,machine,verify=signature,blockdev:rootdisk:http://10.0.2.2:%s/%s\n' "${port}" "${image}" > "${work}/import.pull"
 qemu=(qemu-system-x86_64
     -machine q35,smm=on,accel=kvm -cpu host -m "${mem}" -smp 2
@@ -89,14 +110,15 @@ if [ "${boot}" = http ] && [ ! -s "${vars}.enrolled" ]; then
         -display none -monitor none \
         -serial "file:${work}/enroll.log" </dev/null >/dev/null 2>&1 &
     enroll_pid=$!
-    for _ in $(seq 1 60); do
-        grep -aq 'successfully enrolled' "${work}/enroll.log" 2>/dev/null && break
-        sleep 1
-    done
-    sleep 2
+    # systemd-boot resets the machine after enrolling; the firmware loading a
+    # boot option again proves the variable store has the keys.
+    enrolled_and_reset() { sed -n '/successfully enrolled/,$p' "${work}/enroll.log" 2>/dev/null | grep -aq 'BdsDxe: loading'; }
+    rc=0
+    wait_for 90 "${enroll_pid}" enrolled_and_reset || rc=$?
     kill "${enroll_pid}" 2>/dev/null || true
     wait "${enroll_pid}" 2>/dev/null || true
-    grep -aq 'successfully enrolled' "${work}/enroll.log" || { echo "ERROR: key enrollment failed" >&2; exit 1; }
+    cp "${work}/enroll.log" "${dir}/dogfood-enroll.log" 2>/dev/null || true
+    [ "${rc}" = 0 ] || { echo "ERROR: key enrollment failed (log: ${dir}/dogfood-enroll.log)" >&2; exit 1; }
     echo enrolled > "${vars}.enrolled"
 fi
 if [ "${boot}" = http ]; then
@@ -118,6 +140,13 @@ if [ -n "${DOGFOOD_STATE_DISK:-}" ]; then
 fi
 if [ -n "${DOGFOOD_IGNITION:-}" ]; then
     qemu+=(-smbios "$(cred ignition.config "${DOGFOOD_IGNITION}")")
+fi
+tamper="${DOGFOOD_TAMPER:-}"
+if [ -n "${tamper}" ]; then
+    # The initrd's console shows only that the download unit failed; copy the
+    # pull's own messages there so the log names why the image was refused.
+    printf '[Service]\nStandardOutput=journal+console\nStandardError=journal+console\n' > "${work}/import-console.conf"
+    qemu+=(-smbios "$(cred systemd.unit-dropin.systemd-import@.service "${work}/import-console.conf")")
 fi
 
 echo "Serving ${dir} on :${port}; ${boot} boot of ${ver} (Secure Boot)"
@@ -165,23 +194,54 @@ UNIT
     -smbios "$(cred systemd.extra-unit.dogfood-probe.service "${work}/probe.service")" \
     </dev/null >/dev/null 2>&1 &
 qemu_pid=$!
-deadline=$(( $(date +%s) + timeout_s ))
+probe_done() { grep -aq 'PROBE failed=' "${work}/probe.log" 2>/dev/null; }
+refused() { sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' "${work}/serial.log" 2>/dev/null | grep -aqE "${refusal_re}"; }
+refusal_re='Failed to start Download of .*/'"${image//./\\.}"
 status=1
-while kill -0 "${qemu_pid}" 2>/dev/null && [ "$(date +%s)" -lt "${deadline}" ]; do
-    if grep -aq 'PROBE failed=' "${work}/probe.log" 2>/dev/null; then
-        status=0
-        break
-    fi
-    sleep 2
-done
+if [ -n "${tamper}" ]; then
+    stop() { probe_done || refused; }
+else
+    stop() { probe_done; }
+fi
+wait_for "${timeout_s}" "${qemu_pid}" stop && status=0
 kill "${qemu_pid}" 2>/dev/null || true
 wait "${qemu_pid}" 2>/dev/null || true
 cat "${work}/serial.log" "${work}/probe.log" 2>/dev/null \
     | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g; s/\x1bP[^\x1b]*\x1b\\//g' | tr -d '\r' > "${dir}/dogfood-serial.log"
 grep -a 'GET ' "${work}/http.log" > "${dir}/dogfood-http.log" || true
 grep -aoE 'PROBE[ -].*' "${dir}/dogfood-serial.log" || true
+
+if [ -n "${tamper}" ]; then
+    served() { grep -aq "\"GET /$1 HTTP/1.1\" 200" "${dir}/dogfood-http.log"; }
+    if probe_done; then
+        echo "FAIL: tamper=${tamper}: the tampered image booted (serial log: ${dir}/dogfood-serial.log)" >&2
+        status=1
+    elif ! refused; then
+        echo "FAIL: tamper=${tamper}: no refusal within ${timeout_s}s (serial log: ${dir}/dogfood-serial.log)" >&2
+        tail -n 40 "${dir}/dogfood-serial.log" >&2
+        status=1
+    elif ! served "${image}" || ! served SHA256SUMS || ! served SHA256SUMS.gpg; then
+        # Refused before it had the image and the signed manifest: that is a
+        # transport failure, not a verification failure.
+        echo "FAIL: tamper=${tamper}: the pull failed before fetching ${image}, SHA256SUMS and SHA256SUMS.gpg" >&2
+        status=1
+    else
+        grep -aE "${refusal_re}" "${dir}/dogfood-serial.log" | sed 's/^/REFUSED /' | head -n 5
+        echo "PASS: tamper=${tamper}: ${image} refused after fetching the signed manifest (serial log: ${dir}/dogfood-serial.log)"
+        status=0
+    fi
+    if [ "${status}" = 0 ] && [ -n "${DOGFOOD_EXPECT:-}" ] && ! grep -aqE -- "${DOGFOOD_EXPECT}" "${dir}/dogfood-serial.log"; then
+        echo "FAIL: tamper=${tamper}: serial log does not match DOGFOOD_EXPECT=${DOGFOOD_EXPECT}" >&2
+        status=1
+    fi
+    exit "${status}"
+fi
+
 failed="$(grep -a '\[FAILED\]' "${dir}/dogfood-serial.log" || true)"
-if [ "${status}" = 0 ] && [ -z "${failed}" ] && grep -aq 'PROBE failed=0' "${dir}/dogfood-serial.log"; then
+if [ "${status}" = 0 ] && [ -n "${DOGFOOD_EXPECT:-}" ] && ! grep -aqE -- "${DOGFOOD_EXPECT}" "${dir}/dogfood-serial.log"; then
+    echo "FAIL: booted, but the probe output does not match DOGFOOD_EXPECT=${DOGFOOD_EXPECT}" >&2
+    status=1
+elif [ "${status}" = 0 ] && [ -z "${failed}" ] && grep -aq 'PROBE failed=0' "${dir}/dogfood-serial.log"; then
     echo "PASS: ${boot} boot with no failed units (serial log: ${dir}/dogfood-serial.log)"
 elif [ "${status}" = 0 ]; then
     echo "FAIL: booted, but units failed:" >&2
