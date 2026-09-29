@@ -40,11 +40,6 @@ config:
   install-commands:
     - |
       set -euo pipefail
-      if [ "%{arch}" != "x86_64" ]; then
-        echo "ERROR: elements/oci/k0s-sysext.bst only supports x86_64 (got %{arch})" >&2
-        exit 1
-      fi
-
       mkdir -p sysext/usr/bin sysext/usr/lib/systemd/system
       cp -a /usr/bin/k0s sysext/usr/bin/k0s
       chmod 0755 sysext/usr/bin/k0s

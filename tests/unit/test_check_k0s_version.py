@@ -255,6 +255,19 @@ def test_main_rejects_hardcoded_upstream_tag_in_url(checker):
     assert "hardcodes the upstream k0s release tag" in _run(checker)
 
 
+def test_main_rejects_hardcoded_tag_in_another_architectures_url(checker):
+    checker.K0S_BIN.write_text(
+        GOOD_BIN
+        + "(?):\n"
+        "  - arch == \"aarch64\":\n"
+        "      sources:\n"
+        "        - kind: remote\n"
+        "          url: github:k0sproject/k0s/releases/download/v1.36.4%2Bk0s.0/k0s-arm64\n",
+        encoding="utf-8",
+    )
+    assert "k0s-arm64" in _run(checker)
+
+
 # --- main(): sysext asset filename ---------------------------------------
 
 

@@ -101,16 +101,17 @@ def main():
             "restrict k0s-version to [A-Za-z0-9._~^+-] in include/k0s.yml.",
         )
 
-    # The upstream download URL must be derived, not restated.
+    # Every upstream download URL (one per architecture) must be derived.
     bin_text = read(K0S_BIN)
-    url_match = re.search(r"^\s*url:\s*(\S+)\s*$", bin_text, re.MULTILINE)
-    if not url_match:
+    urls = re.findall(r"^\s*url:\s*(\S+)\s*$", bin_text, re.MULTILINE)
+    if not urls:
         fail(
             "elements/k0s/k0s-bin.bst declares no source 'url:'.",
             "restore the pinned upstream k0s release URL.",
         )
-    url = url_match.group(1)
-    if "%{k0s-upstream-tag}" not in url:
+    for url in urls:
+        if "%{k0s-upstream-tag}" in url:
+            continue
         fail(
             "elements/k0s/k0s-bin.bst hardcodes the upstream k0s release tag:\n"
             f"  url: {url}\n"
