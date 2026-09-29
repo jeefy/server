@@ -68,6 +68,7 @@ def test_preset_enables_the_update_timers_and_the_health_gate() -> None:
         ["enable", "systemd-sysupdate.timer"],
         ["enable", "systemd-sysupdate-reboot.timer"],
         ["enable", "systemd-boot-check-no-failures.service"],
+        ["enable", "bluefin-boot-deadline.timer"],
         ["enable", "bluefin-diskless-update-check.timer"],
     ]
 
