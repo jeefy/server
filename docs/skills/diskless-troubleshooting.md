@@ -102,8 +102,10 @@ root), so nothing survives a reboot by default.
   (`tests/fixtures/ignition/var-on-disk.ign`, the same state-disk pattern the
   boot server's per-host `bluefin-node.ign` uses; `/var/log/journal` is created
   on it by `systemd-tmpfiles`, so journald persists without extra config).
-  Each boot writes under its own machine ID, so read across boots with
-  `journalctl --merge --list-boots` and `journalctl --merge -b -1`. Do not pin
+  Each boot writes under its own machine ID and plain `journalctl` shows only
+  the current one, so read across boots with
+  `journalctl -D /var/log/journal --list-boots` and
+  `journalctl -D /var/log/journal -b -1`. Do not pin
   the ID by writing `/etc/machine-id` with Ignition: a set machine ID ends the
   first-boot state that applies the presets on every diskless boot, and
   preset-enabled units stop starting. The `system.machine_id` credential (a
