@@ -18,6 +18,7 @@
 #   DOGFOOD_TIMEOUT=<seconds>  --check deadline (default 600)
 #   DOGFOOD_EXPECT=<ERE>       --check also requires the probe output to match
 #   DOGFOOD_IGNITION=<file>    pass an Ignition config as the ignition.config credential
+#   DOGFOOD_CREDS=<dir>        pass every file in <dir> as a system credential named after it
 #   DOGFOOD_STATE_DISK=<file>  attach a persistent second disk (/dev/vdb), created if missing
 #   DOGFOOD_EXTRA_PROBE=<file> shell snippet appended to the in-guest probe
 #   DOGFOOD_VARS=<file>        persistent UEFI variable store (keeps enrolled keys)
@@ -170,6 +171,11 @@ if [ -n "${tamper}" ]; then
     qemu+=(-smbios "$(cred systemd.unit-dropin.systemd-import@.service "${work}/import-console.conf")"
            -smbios "$(cred systemd.unit-dropin.systemd-importd.service "${work}/import-console.conf")")
 fi
+if [ -n "${DOGFOOD_CREDS:-}" ]; then
+    for f in "${DOGFOOD_CREDS}"/*; do
+        if [ -f "${f}" ]; then qemu+=(-smbios "$(cred "${f##*/}" "${f}")"); fi
+    done
+fi
 
 echo "Serving ${dir} on :${port}; ${boot} boot of ${ver} (Secure Boot)"
 if [ "${mode}" != "--check" ]; then
@@ -185,6 +191,7 @@ echo "PROBE root=$(findmnt -no FSTYPE /)"
 echo "PROBE verity=$(veritysetup status usr | sed -n 's/^ *status: *//p')"
 echo "PROBE os=$(. /usr/lib/os-release; echo "${IMAGE_ID} ${IMAGE_VERSION}")"
 echo "PROBE var=$(findmnt -no SOURCE,FSTYPE /var)"
+echo "PROBE root-passwd=$(passwd -S root 2>&1 | cut -d' ' -f2)"
 boots=$(( $(cat /var/lib/dogfood-boots 2>/dev/null || echo 0) + 1 ))
 echo "${boots}" > /var/lib/dogfood-boots
 echo "PROBE boots=${boots}"
