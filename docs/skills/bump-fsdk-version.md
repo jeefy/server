@@ -37,9 +37,11 @@ There is no application version for these images. Two version axes exist:
 
 2. Update the `ref:` in `elements/freedesktop-sdk.bst` to the new tag/commit.
 
-3. Re-check patches still apply — FSDK ships local patches under
-   `patches/freedesktop-sdk/`. If a release changed the patched files, refresh or
-   drop them. `just validate` surfaces patch failures.
+3. Re-check the local patches in `patches/freedesktop-sdk/`
+   ([`patches/README.md`](../../patches/README.md) says why each exists and
+   when to drop it). `just validate` surfaces a patch that no longer applies;
+   it does not catch 0003-0005 pointing at a library version the new ref no
+   longer builds, so compare those by hand (see the README).
 
 4. Rebuild and verify:
 
@@ -71,7 +73,7 @@ Before merging a bump:
   - `components/systemd-base.bst` was dropped in FSDK 26.08, and FSDK now ships its own systemd directly, so the previous `gnome-build-meta` systemd overrides were removed from `elements/freedesktop-sdk.bst`.
 - A point-release tag is immutable: once a GitHub Release for a given
   `image-version` is published, never republish different bits under it.
-- **Only one CAS-config patch remains.** FSDK 26.08 absorbed the old `0001` CAS-limits patch (upstream `project.conf` sets `retry-limit`/`retry-delay`/`request-timeout` itself), so `patches/freedesktop-sdk/` carries only `0001-project.conf-Add-GNOME-CAS-servers.patch`.
+- FSDK 26.08 absorbed the old CAS-limits patch (upstream `project.conf` sets `retry-limit`/`retry-delay`/`request-timeout` itself); the remaining patches are listed in [`patches/README.md`](../../patches/README.md).
 - Junction overrides are only meaningful for components your local elements
   reference directly. The 25 GNOME sdk/* overrides (cairo, gtk3, pango, glib,
   gdk-pixbuf…) were dead weight — none of our `base-stack`, `brew-deps` etc. ever
