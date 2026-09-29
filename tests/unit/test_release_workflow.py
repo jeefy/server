@@ -42,6 +42,12 @@ def test_oras_is_pinned_identically_in_both_jobs() -> None:
     assert "checksum" in json.loads(pins[0])["with"]
 
 
+def test_build_and_dry_run_check_out_the_triggering_commit() -> None:
+    for job in (JOBS["build"], DRY_RUN):
+        checkout = steps(job, "actions/checkout@")[0]["with"]
+        assert checkout["ref"] == "${{ github.event.pull_request.head.sha || github.sha }}"
+
+
 def test_dry_run_is_read_only_and_secret_free() -> None:
     assert DRY_RUN["if"] == "${{ github.event_name == 'pull_request' }}"
     assert DRY_RUN["permissions"] == {"contents": "read"}
