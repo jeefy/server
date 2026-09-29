@@ -107,8 +107,9 @@ def test_kured_flag_is_set_only_when_an_update_is_pending() -> None:
     service = ini(KURED)["Service"]
     assert "ExecStartPost" not in service, "Type=simple: ExecStartPost runs before the update"
     cmd = service["ExecStopPost"]
-    assert "/usr/bin/systemd-sysupdate pending" in cmd
-    assert "touch /run/reboot-required" in cmd
+    # bluefin-update-pending wraps `systemd-sysupdate pending` and says no
+    # when that version already failed its boot tries (test_update_pending.py).
+    assert cmd == "/usr/bin/sh -c 'if /usr/libexec/bluefin-update-pending; then touch /run/reboot-required; fi'"
     for dropin in (UNITS / "systemd-sysupdate.service.d").iterdir():
         keys = {key for section in ini(dropin).values() for key in section}
         assert "ExecStartPost" not in keys, dropin
@@ -125,6 +126,12 @@ def test_reboot_is_held_by_the_operator_lock_files() -> None:
     ]
     # One interlock drop-in: #182's reboot-coordination.conf must not come back.
     assert sorted(p.name for p in INTERLOCK.parent.iterdir()) == ["10-diskless.conf", "20-interlock.conf"]
+
+
+def test_reboot_skips_an_update_that_already_failed_its_tries() -> None:
+    conds = values(INTERLOCK, "ExecCondition")
+    assert len(conds) == 2
+    assert conds[0] == "/usr/libexec/bluefin-update-pending"
 
 
 def _interlock_script() -> str:
