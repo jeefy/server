@@ -4,7 +4,7 @@ description: Use when building or debugging the Bluefin Server boot chain, the d
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-28"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -190,17 +190,65 @@ Installed nodes update with `systemd-sysupdate` against the transfers in
 
 Sources are the release assets on GitHub Releases, verified against the
 GPG-signed `SHA256SUMS` with `Verify=yes` (see
-`systemd-sysupdate-verification.md`). After an update the node reboots into
-slot B; if the new image fails its three tries, systemd-boot rolls back to
-slot A on its own. A Kured hook
-(`files/os/systemd/system/systemd-sysupdate.service.d/kured-hook.conf`)
-touches `/run/reboot-required` for cluster-aware reboot coordination.
+`systemd-sysupdate-verification.md`).
 
-Diskless nodes have no slots, so `systemd-sysupdate.service` is disabled when
-booted diskless
-(`files/os/systemd/system/systemd-sysupdate.service.d/10-diskless.conf`).
-A diskless node updates by rebooting into a newer image; that is the whole
-mechanism.
+### Automatic updates on installed nodes
+
+`files/os/systemd/system-preset/80-bluefin-updates.preset` enables FSDK's
+`systemd-sysupdate.timer` (15 min after boot, then every 2 h, randomized) and
+`systemd-sysupdate-reboot.timer` (04:10, randomized), which FSDK's
+`90-sysupdate.preset` would otherwise disable. The timer runs the same
+`systemd-sysupdate update` as a manual update, so enabled features follow the
+OS in lock-step. The reboot unit runs `systemd-sysupdate reboot`, which reboots
+only when a newer version than the booted one is installed.
+
+- **Boot health gate.** The preset enables
+  `systemd-boot-check-no-failures.service` (`RequiredBy=boot-complete.target`,
+  after `multi-user.target`), and `systemd-bless-boot` marks a boot-counted UKI
+  good only after `boot-complete.target`. A good boot is one that reaches
+  `multi-user.target` with no failed unit; any other boot uses up a try, and
+  systemd-boot falls back to the previous UKI after the third. Only
+  sysupdate-installed UKIs are counted, so diskless boots never pull in
+  `boot-complete.target`.
+- **Kubernetes interlock.** Kubernetes nodes reboot through
+  [kured](https://kured.dev/) (cordon, drain, one node at a time).
+  `systemd-sysupdate.service.d/20-kured.conf` touches `/run/reboot-required`
+  after each run once `systemd-sysupdate pending` reports an installed update.
+  `systemd-sysupdate-reboot.service.d/20-kubernetes.conf` skips the local
+  reboot (`ExecCondition=`) while `kubelet.service`, `k0scontroller.service` or
+  `k0sworker.service` is running, the interlock proposed in
+  [#182](https://github.com/projectbluefin/server/pull/182). Without kured, a
+  Kubernetes node keeps the staged update until someone reboots it.
+- **Opting out.** `systemctl disable --now systemd-sysupdate-reboot.timer`
+  stages updates without rebooting; also disable `systemd-sysupdate.timer` to
+  stop updating. Presets apply on first boot only, so nodes installed before
+  this preset need `systemctl preset systemd-sysupdate.timer
+  systemd-sysupdate-reboot.timer systemd-boot-check-no-failures.service` once.
+
+### Diskless and installer boots
+
+Diskless nodes and the USB installer have no slots. Their `10-diskless.conf`
+drop-ins condition `systemd-sysupdate.service`,
+`systemd-sysupdate-reboot.service` and both timers off when
+`/run/machines/rootdisk.raw` exists or the command line has `root=tmpfs`. A
+diskless node updates by rebooting into whatever its boot server serves.
+
+`bluefin-diskless-update-check.timer` (5 min after boot, then hourly; only
+when `/run/machines/rootdisk.raw` exists) tells the node when that would be a
+newer image. `/usr/libexec/bluefin-boot-origin`, which Ignition also uses,
+finds the boot directory from the `StubDeviceURL` EFI variable, the explicit
+http(s) `rd.systemd.pull=` source, or the `import.pull` credential.
+`bluefin-diskless-update-check` then fetches `SHA256SUMS` and `SHA256SUMS.gpg`
+from that directory, verifies them with `gpgv` against the image keyring, and
+compares the `bluefin-server_<ver>.raw` entry with the running `IMAGE_VERSION`
+(`systemd-analyze compare-versions`). When the release is newer it touches
+`/run/reboot-required` and logs `Bluefin Server <ver> is available from <url>`.
+Network and signature errors are logged and leave the flag alone; the unit
+never fails and never reboots. Kured reboots a diskless Kubernetes node on the
+flag. Other nodes wait for an operator or fleet tooling to act on it
+(`test -e /run/reboot-required`,
+`journalctl -u bluefin-diskless-update-check`). The boot server (Booty)
+decides what the next boot pulls.
 
 ## Ignition (opt-in)
 
@@ -250,13 +298,15 @@ specifying the URL to pull `bluefin-server_<ver>.raw` and its signed SHA256SUMS.
 | "The initrd needs dracut." | The initrd is a hand-assembled systemd userspace (`initrd-stack.bst`) packed as newc cpio + zstd. No dracut anywhere in the tree. |
 | "The diskless pull is unverified." | The initrd pulls with `verify=signature` against the keyring it ships; the signed UKI also pins `usrhash=`, and dm-verity checks every `/usr` block read. |
 | "Ignition needs a karg." | The cmdline is sealed in the signed UKI. Ignition configs arrive as `ignition.config` / `ignition.config.url` system credentials, or as `bluefin-node.ign` next to the UKI on a UEFI HTTP boot. |
-| "Diskless nodes need sysupdate." | Diskless nodes update by rebooting into a newer image; sysupdate is disabled when booted diskless. |
+| "Diskless nodes need sysupdate." | Diskless nodes update by rebooting into a newer image; sysupdate is disabled when booted diskless, and `bluefin-diskless-update-check` only flags that a newer image is being served. |
+| "The update timer should reboot Kubernetes nodes too." | Kubernetes nodes reboot through kured (drain first); the reboot unit's `ExecCondition=` stands down while kubelet or k0s runs. |
 
 ## Verification
 
 - [ ] `just validate` resolves the BuildStream graph without errors.
 - [ ] `just dogfood-check` passes (diskless boot, Secure Boot, no failed units).
-- [ ] `just dogfood-install NEXT=<dir>` passes (install, disk boot, A/B update).
+- [ ] `just dogfood-install NEXT=<dir>` passes (install, disk boot with both update timers enabled, A/B update through `systemd-sysupdate.service` with the kured flag and interlock, blessed after `boot-complete.target`).
+- [ ] `just dogfood-check` reports `PROBE update-check=success` for the diskless update check.
 - [ ] UKIs pin `usrhash=` and are signed with DB; `sbverify` passes in `bluefin-server-boot.bst`.
 - [ ] No hardcoded device paths in any boot configuration.
 - [ ] No element named `bluefin-server-ddi` or `bluefin-server-installer` exists; the OS DDI comes from `oci/bluefin-server-image.bst`.

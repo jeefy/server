@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-28"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -102,11 +102,17 @@ Useful environment variables:
   `SHA256SUMS`; the boot must fail, proving the signature check.
 - `DOGFOOD_EXTRA_PROBE=<file>` — shell snippet appended to the in-guest probe.
 
+Every diskless `--check` boot also runs `bluefin-diskless-update-check` once
+and reports `PROBE update-check=<result> flag=<set|none>`.
+
 `scripts/dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]` is the full
 end-to-end check: install from a diskless boot, boot the installed disk,
-`systemd-sysupdate` A->B to `<next-dir>` with the default `Verify=yes` against
-the signed manifest (with the `zfs` feature enabled, so the ZFS sysext follows
-the OS in lock-step), and with `<broken-dir>` corrupt the updated slot and
+`systemd-sysupdate` A->B to `<next-dir>` through `systemd-sysupdate.service`
+(the unit the timer starts) with the default `Verify=yes` against the signed
+manifest (with the `zfs` feature enabled, so the ZFS sysext follows the OS in
+lock-step), then asserts the kured flag, the Kubernetes reboot interlock, both
+timers enabled and the new UKI blessed after `boot-complete.target`, and with
+`<broken-dir>` corrupt the updated slot and
 confirm boot counting rolls the node back to `<next-dir>` on its own, with the
 matching ZFS sysext still merged. CI runs the first two stages
 (`dogfood-diskless.sh --check`, `dogfood-install.sh dist/diskless`) as the
