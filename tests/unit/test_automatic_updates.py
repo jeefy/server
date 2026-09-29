@@ -53,10 +53,11 @@ def preset_lines() -> list[list[str]]:
     ]
 
 
-def test_preset_enables_the_update_timers() -> None:
+def test_preset_enables_the_update_timers_and_the_health_gate() -> None:
     assert preset_lines() == [
         ["enable", "systemd-sysupdate.timer"],
         ["enable", "systemd-sysupdate-reboot.timer"],
+        ["enable", "systemd-boot-check-no-failures.service"],
     ]
 
 
