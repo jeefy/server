@@ -4,7 +4,7 @@ description: Roadmap for future Bluefin Server architecture work. Use when plann
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-28"
+  last_updated: "2026-09-29"
   context7-sources:
     - /systemd/systemd
 ---
@@ -30,7 +30,7 @@ For reference, so future planning does not redo them:
 - OCI artifact output (`ghcr.io/<owner>/bluefin-server:<ver>,latest`) alongside the raw release files, via ORAS in CI and `just publish-oci` locally.
 - Booty HTTP boot: per-MAC serving of the UKI, DDI, `SHA256SUMS(.gpg)`, and per-host `bluefin-node.ign`, verified end to end in QEMU with Secure Boot; the Booty branch is not yet merged upstream.
 - ZFS and KubeStellar sysexts version-locked to the image, delivered in lock-step with OS updates through sysupdate features; rollback keeps the matching sysext.
-- Automatic updates on installed nodes (preset-enabled `systemd-sysupdate.timer` and `systemd-sysupdate-reboot.timer`), a kured interlock for Kubernetes nodes, a boot health gate (`systemd-boot-check-no-failures.service`), and a signed update signal for diskless nodes (`bluefin-diskless-update-check`); see [ddi-installer.md](ddi-installer.md) "Updates".
+- Automatic updates on installed nodes (preset-enabled `systemd-sysupdate.timer` and `systemd-sysupdate-reboot.timer`), operator reboot lock files and a kured interlock for Kubernetes nodes (from #182), a boot health gate (`systemd-boot-check-no-failures.service`) whose deadline reboots an unhealthy counted boot back to the previous image (`bluefin-boot-deadline.timer`), and a signed update signal for diskless nodes that are not pinned to a versioned image (`bluefin-diskless-update-check`); see [ddi-installer.md](ddi-installer.md) "Updates".
 
 ## Planned work
 
