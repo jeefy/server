@@ -57,12 +57,27 @@ with the module signing certificate, and the release `SHA256SUMS` with the
 image signing key. `build-image` (and `validate`) depends on `gen-dev-keys`,
 which generates throwaway keys in `files/boot-keys/` (gitignored) on first
 run: PK/KEK/DB, the module certificate, and the `sysupdate-signing.asc` /
-`import-pubring.pgp` pair. Keys are kept unless `--force` is given. CI builds
+`import-pubring.pgp` pair. Keys are kept unless `--force` is given, and a
+partial set (a file of a pair or of the boot set missing or empty) is an error
+rather than something to fill in. CI builds
 on `main` unpack the `BOOT_KEYS_TARBALL` secret, write `SYSUPDATE_SIGNING_KEY`
 to `files/boot-keys/sysupdate-signing.asc`, and copy the committed release
 keyring `files/os/sysupdate-keys/import-pubring.gpg` to
 `files/boot-keys/import-pubring.pgp`; pull requests get throwaway keys and
 their images are never published.
+
+**Rotating any key needs a new `image-version`.** Every key ends up in the
+image bits: DB signs the UKIs and systemd-boot, the module certificate is
+built into the kernel, and `import-pubring.pgp` ships in `/usr`. An image
+version names one immutable set of bits, and `systemd-sysupdate` only
+installs a version newer than the one it runs, so rebuilding the same version
+with new keys publishes different bits under a released name and never
+reaches nodes already on it. Rotate keys (`just gen-dev-keys --force`, or new
+CI secrets), then `just set-version` to a version that sorts higher before
+building. Nodes also need the new Secure Boot keys enrolled and, for the
+image signing key, the new keyring; see
+"Rotating the Signing Key" in
+[systemd-sysupdate-verification.md](systemd-sysupdate-verification.md).
 
 ## Dogfood: boot it in QEMU
 
