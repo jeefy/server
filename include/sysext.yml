@@ -29,7 +29,10 @@ variables:
     fi
 
     out="%{install-root}/%{sysext-image}.raw"
+    # mkfs.erofs would pick a random filesystem UUID; derive it from the image
+    # name instead so a rebuild of the same image is byte-identical.
+    h="$(printf '%s' '%{sysext-image}' | sha256sum)"
     mkdir -p "%{install-root}"
-    mkfs.erofs -d0 "${out}" sysext
+    mkfs.erofs -d0 -U "${h:0:8}-${h:8:4}-${h:12:4}-${h:16:4}-${h:20:12}" "${out}" sysext
     zstd -T0 -19 -q "${out}" -o "${out}.zst"
     (cd "%{install-root}" && sha256sum --binary "%{sysext-image}.raw.zst" > SHA256SUMS)
