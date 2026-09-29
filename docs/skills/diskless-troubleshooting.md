@@ -4,7 +4,7 @@ description: Use when a diskless (netboot UKI) node fails to boot, reboot-loops,
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-28"
+  last_updated: "2026-09-29"
   context7-sources:
     - /systemd/systemd
 ---
@@ -46,12 +46,17 @@ previous image. Change the delay (10 to 86400 s) with the
 line is not locked by Secure Boot. The 10 s floor keeps a persistent failure
 from becoming a hot reboot loop.
 
-Before the download, `bluefin-pull-check@.service` (pulled in by
-`systemd-import@.service.d/10-bluefin-pull-check.conf`) sends an HTTP HEAD to
-the image URL systemd-import-generator resolved and fails early, with its own
-framed console message, when the server cannot be reached, answers with an
-error, or the image cannot fit in RAM. A failed download goes straight to the
-summary instead of waiting out the 300 s `/usr` device timeout.
+Before the download, `bluefin-pull-check@.service` (wanted by
+`systemd-import@.service.d/10-bluefin-pull-check.conf` and ordered before the
+download) sends an HTTP HEAD to the image URL systemd-import-generator
+resolved. It stops the boot, with its own framed console message, only when a
+2xx answer gives a `Content-Length` that cannot fit in RAM. When it cannot
+check the size (no answer, an HTTP error such as the 403 a signed
+object-store URL gives to HEAD, or no `Content-Length`), it prints
+`BLUEFIN: cannot check that the OS image fits in RAM (<reason>); downloading it anyway`
+and the download runs: whether the image can be fetched is for systemd-import
+to find out. A failed download goes straight to the summary instead of
+waiting out the 300 s `/usr` device timeout.
 
 ## Minimum RAM
 
@@ -62,7 +67,9 @@ backs `/usr`. The pull check requires the DDI plus 64 MiB to fit in both the
 free space of `/run` and `MemAvailable`, so usable RAM (`MemTotal`) must be at
 least about five times the DDI plus 64 MiB: about 3 GiB for a 540 MiB DDI.
 Measured in QEMU with the `26.09.x` DDI, `-m 3072` (2816 MiB `MemTotal`) is
-refused and `-m 3584` boots. Plan on 4 GiB plus the workload.
+refused and `-m 3584` boots. Plan on 4 GiB plus the workload. If the server
+does not give the size, the check is skipped and a machine below the minimum
+fails during the download instead (`systemd-import@...service` failed).
 
 A machine below the minimum fails before the download (QEMU `-m 2048`):
 
@@ -77,10 +84,10 @@ file system capped at 20% of RAM: 371 MiB free there, MemAvailable 1374 MiB.
 
 | Symptom in the summary | Cause | Timing |
 |---|---|---|
-| `systemd-networkd-wait-online.service` failed, "no network link became routable" | No DHCP answer, no carrier | `systemd-networkd-wait-online --any --timeout=300`: 300 s, then the pull check fails and the node reboots |
+| `systemd-networkd-wait-online.service` failed, "no network link became routable" | No DHCP answer, no carrier | `systemd-networkd-wait-online --any --timeout=300`: 300 s, then the download fails and the node reboots |
 | "no network interface found" | NIC driver not in the initrd module list (`initrd-modules` in `oci/bluefin-server-boot.bst`) | As above |
-| "CANNOT REACH THE OS IMAGE SERVER" | Routable link but no route to, or no answer from, the boot server | Seconds after the network is online |
-| "THE OS IMAGE SERVER ANSWERED HTTP 404" | The DDI is not next to the netboot UKI (or at the `import.pull` URL) | Seconds |
+| `systemd-import@...service` failed, systemd-importd says `Transfer failed: ...` | Routable link but no route to, or no answer from, the boot server | When the download starts |
+| `systemd-import@...service` failed, systemd-importd says `HTTP request to ... failed with code 404.` | The DDI is not next to the netboot UKI (or at the `import.pull` URL) | When the download starts |
 | "NOT ENOUGH RAM FOR A DISKLESS BOOT" | See [Minimum RAM](#minimum-ram) | Seconds |
 | `systemd-import@...service` failed, with systemd-importd's reason (e.g. `DOWNLOAD INVALID: Checksum ... did not check out`) | Download interrupted, the DDI does not match `SHA256SUMS`, or `SHA256SUMS.gpg` is missing or not signed by a key in the image keyring | Right after the download |
 | `systemd-veritysetup@usr.service` or `sysusr-usr.mount` failed | The DDI does not match the `usrhash=` of the UKI that booted (mixed versions on the server) | After the download |
