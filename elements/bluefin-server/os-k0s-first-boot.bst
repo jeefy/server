@@ -7,7 +7,8 @@ description: |
   run-bluefin-installer.mount for the USB installer), and the
   systemd-sysinstall.service drop-in the USB installer boots into, and the
   update units: systemd-sysupdate(-reboot) drop-ins (diskless conditions, the
-  kured flag, the Kubernetes reboot interlock) and the diskless update check.
+  kured flag, the reboot interlock: operator lock files, failed-update guard,
+  Kubernetes), the boot deadline and the diskless update check.
 
 sources:
   - kind: local
