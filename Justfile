@@ -68,7 +68,7 @@ validate: gen-dev-keys
     python3 .github/scripts/check-release-version.py
     python3 .github/scripts/check-k0s-version.py
     python3 .github/scripts/check-renovate-series.py
-    just bst show --deps all oci/bluefin-server-image.bst oci/k0s-sysext.bst oci/kubestellar-sysext.bst oci/zfs-sysext.bst oci/kubeadm-sysext.bst
+    just bst show --deps all oci/bluefin-server-image.bst oci/k0s-sysext.bst oci/kubestellar-sysext.bst oci/zfs-sysext.bst oci/kubeadm-sysext.bst oci/nvidia-container-toolkit-sysext.bst
 
 # Run the unit test suite (pytest + bats; bats from a container if not installed).
 [group('dev')]
@@ -198,6 +198,22 @@ export-zfs-sysext: build-zfs-sysext
     grep 'raw.zst$' dist/zfs-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
     rm -rf dist/zfs-checkout
     @echo "==> wrote zfs sysext:" && ls -lh dist/sysext/
+
+# Build the NVIDIA Container Toolkit (CDI) systemd-sysext (own version axis).
+[group('sysext')]
+build-nvidia-container-toolkit-sysext:
+    just bst build oci/nvidia-container-toolkit-sysext.bst
+
+# Export the NVIDIA Container Toolkit sysext + SHA256SUMS to dist/sysext/.
+[group('sysext')]
+export-nvidia-container-toolkit-sysext: build-nvidia-container-toolkit-sysext
+    rm -rf dist/nvidia-ctk-checkout
+    mkdir -p dist/sysext
+    just bst artifact checkout oci/nvidia-container-toolkit-sysext.bst --directory /src/dist/nvidia-ctk-checkout
+    cp dist/nvidia-ctk-checkout/nvidia-container-toolkit-*.raw.zst dist/sysext/
+    grep 'raw.zst$' dist/nvidia-ctk-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
+    rm -rf dist/nvidia-ctk-checkout
+    @echo "==> wrote nvidia-container-toolkit sysext:" && ls -lh dist/sysext/
 
 # Set up KubeStellar kc-agent for the user in ONE command.
 [group('test')]
