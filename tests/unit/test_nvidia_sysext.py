@@ -256,9 +256,22 @@ def test_nothing_in_the_base_image_enables_or_ships_the_driver() -> None:
     for preset in ROOT.joinpath("files").rglob("*.preset"):
         for verb, pattern in preset_rules(preset):
             assert not (verb == "enable" and "nvidia" in pattern), preset
-    for element in (ELEMENTS / "bluefin-server").rglob("*.bst"):
-        assert "nvidia" not in element.read_text(encoding="utf-8"), element
-    assert "nvidia" not in (ELEMENTS / "oci" / "bluefin-server-image.bst").read_text(encoding="utf-8")
+    # /usr carries at most the opt-in delivery plumbing (sysupdate transfers,
+    # the toolkit's activation units), never an NVIDIA build element.
+    for element in (*(ELEMENTS / "bluefin-server").rglob("*.bst"), ELEMENTS / "oci" / "bluefin-server-usr.bst"):
+        text = element.read_text(encoding="utf-8")
+        assert "nvidia/" not in text and "oci/nvidia-" not in text, element
+
+
+@pytest.mark.parametrize("flavour", flavours())
+def test_every_flavour_is_in_the_signed_release_set(flavour: str) -> None:
+    image = (ELEMENTS / "oci" / "bluefin-server-image.bst").read_text(encoding="utf-8")
+    assert f"filename: oci/{flavour}-sysext.bst" in image
+    assert f"/sysext/{flavour}/{flavour}_%{{image-version}}.raw.zst" in image
+    assert "sha256sum --binary *.raw *.efi *.raw.zst *.spdx.json > SHA256SUMS" in image
+    publish = (ROOT / "scripts" / "publish-release.sh").read_text(encoding="utf-8")
+    assert f'"{flavour}_${{v}}\\\\.raw\\\\.zst"' in publish
+
 
 
 @pytest.mark.parametrize("flavour", flavours())
