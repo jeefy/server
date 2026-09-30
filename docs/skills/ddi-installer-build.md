@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-09-29"
+  last_updated: "2026-09-30"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -33,7 +33,7 @@ just build-zfs-sysext  # build oci/zfs-sysext.bst
 just export-zfs-sysext # export OpenZFS sysext + SHA256SUMS to dist/sysext/
 just build-nvidia-sysext  # build oci/<flavour>-sysext.bst (nvidia-open-595)
 just export-nvidia-sysext # export NVIDIA sysext + SHA256SUMS to dist/sysext/
-just dogfood-nvidia       # QEMU disk install + merge/probe the NVIDIA sysext
+just dogfood-nvidia       # QEMU disk install + merge/probe dist/diskless/'s NVIDIA sysext
 just version / just tags  # FSDK-derived point release and tag set
 ```
 
@@ -163,6 +163,12 @@ lock-step), then asserts the kured flag, the Kubernetes reboot interlock, both
 timers enabled and the new UKI blessed after `boot-complete.target`, and with
 `<broken-dir>` break the update and confirm boot counting rolls the node back
 to `<next-dir>` on its own, with the matching ZFS sysext still merged.
+`DOGFOOD_SYSEXT=nvidia` enables the `nvidia-open-595` feature instead of `zfs`
+(the two sysexts are mutually exclusive) and the NVIDIA Container Toolkit
+component with `nvidia-container-toolkit-activate.service`; after the update
+and after the rollback the driver sysext for the booted version must be merged
+with its units skipped (no GPU in QEMU), and the toolkit fetched and merged.
+`just dogfood-install <next-dir> <broken-dir>` runs the whole sequence.
 `DOGFOOD_BROKEN=slot` (default) corrupts the updated usr slot, so the initrd
 fails. `DOGFOOD_BROKEN=unit` adds a unit that fails on `<broken-dir>`'s version
 only and shortens the boot deadline (`DOGFOOD_DEADLINE`, default `2min`): each
