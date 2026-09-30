@@ -13,3 +13,5 @@ dist/
 .pytest_cache/
 # Local Secure Boot / module signing keys (just gen-dev-keys)
 files/boot-keys/
+# BuildStream cache upload credentials and config (scripts/bst-cache-push.sh)
+.bst-cache-push/
