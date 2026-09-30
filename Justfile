@@ -194,7 +194,7 @@ export-zfs-sysext: build-zfs-sysext
     rm -rf dist/zfs-checkout
     mkdir -p dist/sysext
     just bst artifact checkout oci/zfs-sysext.bst --directory /src/dist/zfs-checkout
-    cp dist/zfs-checkout/zfs-*.raw.zst dist/sysext/
+    cp dist/zfs-checkout/zfs_*.raw.zst dist/sysext/
     grep 'raw.zst$' dist/zfs-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
     rm -rf dist/zfs-checkout
     @echo "==> wrote zfs sysext:" && ls -lh dist/sysext/
