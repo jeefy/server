@@ -186,7 +186,9 @@ def test_units_skip_themselves_without_an_nvidia_gpu() -> None:
     load_unit = SystemdFile(SRC / "nvidia-load.service")
     assert load_unit.words("Unit", "Requires") == ["nvidia-flavour-guard.service"]
     assert {"nvidia-flavour-guard.service", "systemd-sysext.service"} <= set(load_unit.words("Unit", "After"))
-    assert load_unit.commands() == [["/usr/bin/modprobe", "-a", "nvidia", "nvidia-uvm", "nvidia-modeset", "nvidia-drm"]]
+    assert load_unit.commands() == [
+        ["/usr/libexec/bluefin-sysext-modules", "nvidia", "nvidia-uvm", "nvidia-modeset", "nvidia-drm"]
+    ]
     nodes = SystemdFile(SRC / "nvidia-device-nodes.service")
     assert nodes.words("Unit", "After") == ["nvidia-load.service"]
     assert nodes.value("Unit", "ConditionPathIsDirectory") == "/sys/module/nvidia"
