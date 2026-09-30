@@ -215,6 +215,11 @@ export-nvidia-sysext FLAVOUR="nvidia-open-595": (build-nvidia-sysext FLAVOUR)
     rm -rf dist/{{FLAVOUR}}-checkout
     @echo "==> wrote {{FLAVOUR}} sysext:" && ls -lh dist/sysext/
 
+# Install dist/diskless/ in QEMU, merge the exported NVIDIA sysext and probe it (no GPU).
+[group('sysext')]
+dogfood-nvidia FLAVOUR="nvidia-open-595":
+    bash scripts/dogfood-nvidia.sh dist/diskless "dist/sysext/{{FLAVOUR}}_$(sed -n 's/^  image-version: "\(.*\)"$/\1/p' include/image.yml).raw.zst"
+
 # Set up KubeStellar kc-agent for the user in ONE command.
 [group('test')]
 setup-kubestellar ORIGIN="http://localhost:8080,http://127.0.0.1:8080":
