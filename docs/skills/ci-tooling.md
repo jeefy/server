@@ -179,8 +179,10 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
     - releases: diskless boot, `systemd-sysinstall` to disk, boot the disk;
     - every other build (the nightly build of `main`, `full-build` and FSDK
       pull requests, dispatches): the same, then `systemd-sysupdate` A->B to
-      `1.<run>.1` and a boot-counted rollback from a corrupted `1.<run>.2`
-      (see [ddi-installer-build.md](ddi-installer-build.md) for why not
+      `1.<run>.1` and a boot-counted rollback from a corrupted `1.<run>.2`,
+      with the ZFS and NVIDIA sysexts merged together
+      (`DOGFOOD_SYSEXT=zfs,nvidia`; see
+      [ddi-installer-build.md](ddi-installer-build.md), also for why not
       `0.<run>.N`). Releases skip this because their extra sets would be
       release-signed versions nobody publishes; the nightly dev-key build of
       `main` runs it instead.
