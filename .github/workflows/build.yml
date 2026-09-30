@@ -67,6 +67,11 @@ jobs:
     if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 300
+    # The BuildStream cache upload credentials live in the `bst-cache`
+    # environment, whose deployment rule only admits main. Attach it only to
+    # pushes to main: an empty name attaches no environment, so pull requests
+    # (and a PR that edits this line) never get the credentials.
+    environment: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'bst-cache' || '' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -191,6 +196,43 @@ jobs:
             !dist/*/bluefin-server-installer_*.raw
           if-no-files-found: error
           retention-days: 1
+
+      # Uploads the key-free artifacts this build compiled (FSDK's kernel
+      # above all) to cache.projectbluefin.io, so later builds pull them.
+      # Only after the build: the push configuration exists only inside
+      # scripts/bst-cache-push.sh, which pushes an explicit allow-list with
+      # --deps none (see "Build time and caches" in docs/skills/ci-tooling.md).
+      # Until the bst-cache environment holds both credentials, the upload
+      # is skipped and the build behaves as before.
+      - name: Check BuildStream cache credentials
+        id: cache-creds
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          CASD_CLIENT_CERT: ${{ vars.CASD_CLIENT_CERT }}
+          CASD_CLIENT_KEY: ${{ secrets.CASD_CLIENT_KEY }}
+        run: |
+          if [ -n "${CASD_CLIENT_CERT}" ] && [ -n "${CASD_CLIENT_KEY}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipping cache upload: no credentials"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The cache is an optimization: a failed upload warns, it does not
+      # fail the build or hold back the release.
+      - name: Upload key-free artifacts to the BuildStream cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache-creds.outputs.present == 'true'
+        env:
+          CASD_CLIENT_CERT: ${{ vars.CASD_CLIENT_CERT }}
+          CASD_CLIENT_KEY: ${{ secrets.CASD_CLIENT_KEY }}
+        run: |
+          if ! bash scripts/bst-cache-push.sh; then
+            echo "::warning title=BuildStream cache upload failed::The build and release are unaffected; the next build on main rebuilds what was not uploaded."
+          fi
+
+      - name: Remove BuildStream cache credentials
+        if: always()
+        run: rm -rf .bst-cache-push
 
   # Secure Boot QEMU boots of the built images: diskless (network pull,
   # dm-verity /usr, tmpfs root), refusal of a tampered image or manifest,
