@@ -77,6 +77,7 @@ def test_sysupdate_directories_are_populated():
         "30-zfs.transfer",
         "31-kubestellar.transfer",
         "32-kubeadm.transfer",
+        "33-nvidia-open-595.transfer",
     ]
     assert k0s == ["70-k0s.transfer"]
 

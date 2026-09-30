@@ -273,6 +273,12 @@ def test_every_flavour_is_in_the_signed_release_set(flavour: str) -> None:
     assert f'"{flavour}_${{v}}\\\\.raw\\\\.zst"' in publish
 
 
+@pytest.mark.parametrize("flavour", flavours())
+def test_installed_nodes_follow_the_image_through_an_opt_in_feature(flavour: str) -> None:
+    sysupdate = ROOT / "files" / "os" / "sysupdate.d"
+    assert (sysupdate / f"{flavour}.feature").is_file()
+    assert len(list(sysupdate.glob(f"[0-9][0-9]-{flavour}.transfer"))) == 1
+
 
 @pytest.mark.parametrize("flavour", flavours())
 def test_just_targets_build_every_flavour(flavour: str) -> None:
