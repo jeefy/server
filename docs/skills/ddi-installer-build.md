@@ -164,10 +164,13 @@ timers enabled and the new UKI blessed after `boot-complete.target`, and with
 `<broken-dir>` break the update and confirm boot counting rolls the node back
 to `<next-dir>` on its own, with the matching ZFS sysext still merged.
 `DOGFOOD_SYSEXT=nvidia` enables the `nvidia-open-595` feature instead of `zfs`
-(the two sysexts are mutually exclusive) and the NVIDIA Container Toolkit
-component with `nvidia-container-toolkit-activate.service`; after the update
-and after the rollback the driver sysext for the booted version must be merged
-with its units skipped (no GPU in QEMU), and the toolkit fetched and merged.
+and the NVIDIA Container Toolkit component with
+`nvidia-container-toolkit-activate.service`; after the update and after the
+rollback the driver sysext for the booted version must be merged with its
+units skipped (no GPU in QEMU), `bluefin-sysext-modules nvidia` must load the
+signed modules as far as the driver's `No NVIDIA GPU found`, and the toolkit
+must be fetched and merged. `DOGFOOD_SYSEXT=zfs,nvidia` enables both features
+and asserts both sets, with the `zfs` module loaded.
 `just dogfood-install <next-dir> <broken-dir>` runs the whole sequence.
 `DOGFOOD_BROKEN=slot` (default) corrupts the updated usr slot, so the initrd
 fails. `DOGFOOD_BROKEN=unit` adds a unit that fails on `<broken-dir>`'s version
