@@ -4,7 +4,7 @@ description: Extensibility via systemd-sysext and systemd-confext for Bluefin Se
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-27"
+  last_updated: "2026-09-30"
   context7-sources:
     - /systemd/systemd
 ---
@@ -65,6 +65,14 @@ The first-party extensions make opposite choices:
   (see `systemd-sysupdate-verification.md`); diskless nodes get them from
   Ignition, which writes `/etc/extensions/<name>_<ver>.raw` with a sha256
   verification hash.
+
+The NVIDIA driver sysexts (`nvidia-open-<branch>_<image-version>.raw`, open
+kernel modules only; flavours and pins in `include/nvidia.yml`) are
+version-locked the same way. They are built and exported only by
+`just build-nvidia-sysext` / `just export-nvidia-sysext` and checked in QEMU
+by `just dogfood-nvidia`; they are not yet part of the release image set.
+Their units skip themselves on a node without an NVIDIA GPU, and
+`nvidia-flavour-guard.service` fails when two flavours are merged.
 
 Third-party extensions built for another distribution (for example the Flatcar
 System Extension Bakery) only merge with `systemd-sysext merge --force`, and
