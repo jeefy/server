@@ -236,7 +236,7 @@ def test_gpu_detection(tmp_path: Path, devices: list[tuple[str, str]], present: 
     [
         (["nvidia-open-595_1"], True),
         (["nvidia-open-595_1", "nvidia-open-615_1"], False),
-        (["nvidia-open-595_1", "zfs_1"], False),
+        (["nvidia-open-595_1", "zfs_1"], True),
         (["nvidia-open-595_1", "kubestellar_1"], True),
     ],
 )
