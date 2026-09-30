@@ -4,7 +4,7 @@ description: CI workflow conventions for Bluefin Server. Use when writing or edi
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-28"
+  last_updated: "2026-09-29"
   context7-sources:
     - /websites/github_en_actions
     - /websites/cli_github_manual
@@ -123,7 +123,7 @@ sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } e
 |-----|----------|---------|---------|
 | `track-junctions` | `track-junctions.yml` | `schedule` (08:00 UTC), `workflow_dispatch` | Resolves the `freedesktop-sdk.bst` junction ref, syncs `project.conf`'s `installer-version`, and opens/updates its own PR on `auto/track-junctions`. `contents: write` + `pull-requests: write`, never on `pull_request`. |
 | `changes` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Decides whether `build` and `boot-test` run: always outside pull requests; on a pull request only if `.github/scripts/image-build-needed.py`, checked out from the PR's base revision, finds a changed path that can reach the image set or the boot test (see [Build time and caches](#build-time-and-caches)). `contents: read` + `pull-requests: read`. |
-| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there. Off `main` it also exports two higher-versioned sets (`1.<run>.1`, `1.<run>.2`) for the update test. Read-only token. |
+| `build` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Resolves the element graph, sets `image-version`, and runs the full BuildStream compile of the image set (OS DDI, signed UKIs, netboot ESP, k0s/KubeStellar/OpenZFS sysext assets), which also writes and signs the combined `SHA256SUMS` inside `oci/bluefin-server-image.bst`. On `main` it installs the `BOOT_KEYS_TARBALL` and `SYSUPDATE_SIGNING_KEY` secrets; both are required there. On pushes to `main` only it runs in the `bst-cache` environment and, after the export, uploads the key-free artifacts it compiled to `cache.projectbluefin.io` (see [Build time and caches](#build-time-and-caches)). Off `main` it also exports two higher-versioned sets (`1.<run>.1`, `1.<run>.2`) for the update test. Read-only token. |
 | `boot-test` | `build.yml` | `pull_request`, `push/main`, `workflow_dispatch` | Runs the Secure Boot QEMU checks on the exported sets (see Core Process step 4). Read-only token. |
 | `release` | `build.yml` | `push/main`, `workflow_dispatch` | Publishes `dist/diskless/` as-is through `scripts/publish-release.sh`: an immutable GitHub Release tagged `v<image-version>` plus an ORAS OCI artifact at `ghcr.io/<owner>/bluefin-server:<ver>,latest` (one layer per file, artifact type `application/vnd.projectbluefin.server.release.v1`), with provenance and SBOM attestations for both (`if: ${{ !failure() && !cancelled() && github.ref == 'refs/heads/main' }}`). Write permissions listed above. |
 | `release-dry-run` | `build.yml` | `pull_request` | Runs the same `scripts/publish-release.sh` commands against the PR's image set: verify, render `gh release create`, and a real `oras push` to a `registry` service container (pinned by digest) that it pulls back. Read-only token, no secrets. |
@@ -224,17 +224,27 @@ per-set cost is estimated at under 10 min.
   `tests/fixtures/`, `project.conf`, `Justfile`, `build.yml`) would skip. No
   status check is required on `main` today; a skipped job reports as passing,
   so they can be made required without `paths-ignore` leaving them pending.
-- **No cache push.** CI only pulls from the caches `project.conf` lists.
-  `bluefin-server/keys/boot-keys.bst` imports `files/boot-keys/`, which on
-  `main` holds the Secure Boot, module-signing and sysupdate private keys, and
-  the image, UKIs, `kernel-modules.bst`, `efi-keys.bst`,
-  `os-sd-boot-signed.bst` and `openzfs-signed.bst` build-depend on it, so
-  `bst artifact push --deps all` of the image would upload the keys to a cache
-  every build pulls from. Pushing needs an explicit element allow-list, with a
-  unit test proving no listed element is, or build-depends on,
-  `boot-keys.bst`. FSDK's `components/linux.bst` only stages the public
-  certificate (`bluefin-server/keys/linux-module-cert.bst`), so the kernel is
-  the candidate worth listing.
+- **Only main uploads, and only key-free artifacts.** On pushes to `main`,
+  `build` runs in the `bst-cache` environment (`main`-only deployments) and,
+  after the export, `scripts/bst-cache-push.sh` uploads to
+  `https://cache.projectbluefin.io:11002` with its mTLS variable
+  `CASD_CLIENT_CERT` and secret `CASD_CLIENT_KEY` (without both it skips; a
+  failed upload only warns). Its push config exists only in that script, never
+  in `bst build`, which would upload everything it builds. It pushes an explicit
+  list (`--deps none`) from `.github/scripts/cache-push-allowlist.py`: the
+  graph minus `boot-keys.bst`, local sources in `files/boot-keys`,
+  `include/image.yml` users, junctions, and all their build and runtime
+  dependents (`kernel-modules`, `efi-keys`, `os-sd-boot-signed`,
+  `openzfs-signed`, the OS stack, UKIs, image). `linux-module-cert.bst` is
+  exempt only while `files/boot-keys/modules/` holds only PEM certificates, so
+  FSDK's kernel stays uploadable. Only artifacts no remote serves yet go up;
+  `tests/unit/test_cache_push.py` enforces the rules. Local FSDK 26.08.0 build:
+  352 of 372 elements listed, 30 uploaded, 2.2 GB (kernel 1.0 GB).
+- **FSDK elements pull only from FSDK's remotes.** BuildStream resolves
+  remotes per project, so the kernel and other FSDK elements use FSDK's
+  `project.conf` list (`cache.freedesktop-sdk.io`, plus `gbm.gnome.org` from
+  `patches/freedesktop-sdk/0001-*`), not ours. Builds pull the uploaded kernel
+  back only once `https://cache.projectbluefin.io:11001` is on that list.
 - **Pull requests still build the kernel.** `just gen-dev-keys` makes a new
   module certificate on every PR run, so the PR kernel's cache key never
   matches anything cached. Caching it needs a stable, non-release PR module
