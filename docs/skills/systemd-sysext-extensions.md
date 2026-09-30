@@ -76,11 +76,29 @@ The first-party extensions make opposite choices:
 
 The NVIDIA driver sysexts (`nvidia-open-<branch>_<image-version>.raw`, open
 kernel modules only; flavours and pins in `include/nvidia.yml`) are
-version-locked the same way. They are built and exported only by
-`just build-nvidia-sysext` / `just export-nvidia-sysext` and checked in QEMU
-by `just dogfood-nvidia`; they are not yet part of the release image set.
-Their units skip themselves on a node without an NVIDIA GPU, and
-`nvidia-flavour-guard.service` fails when two flavours are merged.
+version-locked the same way and ship in the signed release set; installed
+nodes follow the OS with them through the optional `nvidia-open-<branch>`
+sysupdate feature, exactly like `zfs`. `just dogfood-nvidia` checks one in
+QEMU, and `DOGFOOD_SYSEXT=nvidia scripts/dogfood-install.sh` carries it through
+an A/B update and a rollback. Their units skip themselves on a node without an
+NVIDIA GPU, and `nvidia-flavour-guard.service` fails when two flavours are
+merged.
+
+The toolkit is delivered like k0s: the sysupdate component
+`nvidia-container-toolkit` (`/usr/lib/sysupdate.nvidia-container-toolkit.d/`)
+stages it in `/var/lib/nvidia-container-toolkit/` behind the
+`nvidia-container-toolkit.raw` symlink, outside the directories systemd-sysext
+scans, because two versions of an `ID=_any` image there would both merge.
+`nvidia-container-toolkit-activate.service` (opt-in, disabled by
+`80-bluefin-opt-in.preset`) runs `nvidia-container-toolkit-fetch.service`
+(`systemd-sysupdate --component=nvidia-container-toolkit update`) when nothing
+is staged, then once per boot copies the image to `/run/extensions/`,
+refreshes the merge and starts `nvidia-cdi-refresh.{path,service}` by name. It
+must not re-request `multi-user.target` the way `bluefin-sysext-activate.service`
+does: two oneshots doing that pull each other back in until start limits fail
+units. A node opts in with
+`systemctl enable nvidia-container-toolkit-activate.service`; newer toolkit
+releases arrive with `systemd-sysupdate --component=nvidia-container-toolkit update`.
 
 **The NVIDIA and OpenZFS sysexts are mutually exclusive.** Both run `depmod`
 over the base image's modules plus their own and ship the resulting
