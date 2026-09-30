@@ -137,7 +137,8 @@ set-version VERSION:
 
 # Install diskless -> disk, then (with NEXT) sysupdate A->B and reboot, and (with
 # BROKEN) break that update and prove the boot-counted rollback, all in QEMU.
-# DOGFOOD_SYSEXT=nvidia follows the NVIDIA driver and toolkit sysexts instead of ZFS.
+# DOGFOOD_SYSEXT=nvidia follows the NVIDIA driver and toolkit sysexts instead of ZFS,
+# DOGFOOD_SYSEXT=zfs,nvidia follows both.
 [group('diskless')]
 dogfood-install NEXT="" BROKEN="":
     bash scripts/dogfood-install.sh dist/diskless {{NEXT}} {{BROKEN}}

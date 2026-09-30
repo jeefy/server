@@ -17,17 +17,19 @@
 # preset-enabled timer starts, verify the signed SHA256SUMS and have the
 # optional "zfs" sysupdate feature enabled, so the ZFS sysext follows the OS
 # in lock-step and must still be active after the rollback.
-# DOGFOOD_SYSEXT=nvidia enables the "nvidia-open-595" feature instead (the
-# NVIDIA and ZFS sysexts are mutually exclusive) plus the NVIDIA Container
+# DOGFOOD_SYSEXT is a comma-separated list of zfs (the default) and nvidia.
+# nvidia enables the "nvidia-open-595" feature plus the NVIDIA Container
 # Toolkit component and its activation unit; after the update and after the
 # rollback the driver sysext matching the booted version must be merged, its
-# units must skip themselves (QEMU has no NVIDIA GPU) and the toolkit must be
-# merged. Once an update is
+# units must skip themselves (QEMU has no NVIDIA GPU), loading nvidia through
+# bluefin-sysext-modules must reach the driver's own init (signed, "No NVIDIA
+# GPU found") and the toolkit must be merged. zfs,nvidia merges both module
+# sysexts at once; zfs must also have its module loaded. Once an update is
 # staged the kured flag must be set, and the reboot unit must stand down while
 # a stand-in kubelet.service runs. Every disk boot has both update timers
 # enabled; a boot-counted UKI is blessed only after boot-complete.target,
 # which requires that no unit failed.
-# Usage: [DOGFOOD_BROKEN=slot|unit] [DOGFOOD_SYSEXT=zfs|nvidia] dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]
+# Usage: [DOGFOOD_BROKEN=slot|unit] [DOGFOOD_SYSEXT=zfs|nvidia|zfs,nvidia] dogfood-install.sh <dir> [<next-dir> [<broken-dir>]]
 # <next-dir> and <broken-dir> are image sets with increasingly higher versions.
 # DOGFOOD_PORT (default 8765) is shared with dogfood-diskless.sh's server.
 set -euo pipefail
@@ -41,12 +43,16 @@ rm -rf "${state}"
 mkdir -p "${state}"
 truncate -s 16G "${state}/disk.raw"
 
-sysext="${DOGFOOD_SYSEXT:-zfs}"
-case "${sysext}" in
-    zfs) feature=zfs toolkit=0 ;;
-    nvidia) feature=nvidia-open-595 toolkit=1 ;;
-    *) echo "ERROR: DOGFOOD_SYSEXT must be zfs or nvidia" >&2; exit 1 ;;
-esac
+features="" toolkit=0 want_zfs=0 want_nvidia=0
+IFS=, read -r -a sysexts <<< "${DOGFOOD_SYSEXT:-zfs}"
+for sysext in "${sysexts[@]}"; do
+    case "${sysext}" in
+        zfs) want_zfs=1 features="${features} zfs" ;;
+        nvidia) want_nvidia=1 toolkit=1 features="${features} nvidia-open-595" ;;
+        *) echo "ERROR: DOGFOOD_SYSEXT must list zfs and/or nvidia, comma-separated" >&2; exit 1 ;;
+    esac
+done
+features="${features# }"
 
 export DOGFOOD_PORT="${DOGFOOD_PORT:-8765}"
 export DOGFOOD_STATE_DISK="${state}/disk.raw"
@@ -68,6 +74,13 @@ EOF
 cat > "${state}/disk.probe" <<'EOF'
 echo "PROBE usr-part=$(lsblk -rsno PARTLABEL /dev/mapper/usr | grep bluefin_usr_ | tr '\n' ' ')"
 echo "PROBE zfs=$(systemctl is-active zfs.target) $(ls /var/lib/extensions 2>/dev/null | tr '\n' ' ')"
+# bluefin-sysext-activate.service re-requests multi-user.target after the
+# merge, so the load units may still be queued or running.
+for _ in $(seq 180); do
+    systemctl list-jobs --no-legend | grep -qE 'zfs-load-module|nvidia-load' || break
+    sleep 1
+done
+echo "PROBE zfs-module=$(test -d /sys/module/zfs && echo loaded || echo missing) load=$(systemctl show -P Result zfs-load-module.service)"
 echo "PROBE boot-entry=$(bootctl status 2>/dev/null | sed -n 's/^ *Current Entry: *//p' | head -n1)"
 echo "PROBE firstboot-ran=$(systemctl show -P ConditionResult systemd-firstboot.service)"
 bootctl list --no-pager 2>/dev/null | sed -n 's/^ *\(title\|id\): */PROBE-LOG \1 /p'
@@ -80,11 +93,26 @@ iv="$(. /usr/lib/os-release; echo "${IMAGE_VERSION}")"
 echo "PROBE nvidia-driver=$(cat /usr/lib/extension-release.d/extension-release.nvidia-open-595_* 2>/dev/null | sed -n 's/^VERSION_ID=//p' | tr '\n' ' ')image=${iv} file=$(ls /var/lib/extensions 2>/dev/null | grep -x "nvidia-open-595_${iv}.raw") guard=$(systemctl is-active nvidia-flavour-guard.service) load=$(systemctl show -P Result nvidia-load.service)"
 echo "PROBE nvidia-toolkit=$(test -e /usr/lib/extension-release.d/extension-release.nvidia-container-toolkit && echo merged) activate=$(systemctl show -P Result nvidia-container-toolkit-activate.service) ctk=$(nvidia-ctk --version 2>/dev/null | head -n1)"
 echo "PROBE nvidia-toolkit-staged=$(ls /var/lib/nvidia-container-toolkit 2>/dev/null | tr '\n' ' ')"
+if [ -e "/usr/lib/extension-release.d/extension-release.nvidia-open-595_${iv}" ]; then
+    # nvidia-load.service skipped itself (no GPU); load by hand through the
+    # helper: it must resolve the in-tree dependencies and reach the driver's
+    # init, which fails with ENODEV, not "not found" or "Unknown symbol".
+    kmods="$(/usr/libexec/bluefin-sysext-modules --basedir 2>/dev/null)"
+    echo "PROBE nvidia-sig=$(for m in nvidia nvidia-uvm nvidia-modeset nvidia-drm; do modinfo -b "${kmods}" -F sig_hashalgo "${m}"; done | tr '\n' ' ')"
+    modprobe -d "${kmods}" --show-depends nvidia-drm | sed 's|^|PROBE-LOG nvidia-drm deps: |'
+    rc=0; /usr/libexec/bluefin-sysext-modules nvidia > /run/nvidia-helper.log 2>&1 || rc=$?
+    echo "PROBE nvidia-helper=${rc} $(grep -v ' indexed ' /run/nvidia-helper.log | tr '\n' ' ')"
+    echo "PROBE nvidia-no-gpu=$(journalctl -k -b -o cat --no-pager | grep -c 'NVRM: No NVIDIA GPU found')"
+    echo "PROBE nvidia-rejected=$(journalctl -k -b -o cat --no-pager | cat - /run/nvidia-helper.log | grep -ciE 'module verification failed|key was rejected|unsigned module|required key not available|unknown symbol')"
+    echo "PROBE nouveau-blacklisted=$(modprobe -d "${kmods}" -c | grep -cx 'blacklist nouveau')"
+fi
 EOF
 
 cat > "${state}/update.probe" <<'EOF'
-mkdir -p /etc/sysupdate.d/@FEATURE@.feature.d
-printf '[Feature]\nEnabled=true\n' > /etc/sysupdate.d/@FEATURE@.feature.d/enable.conf
+for feature in @FEATURES@; do
+    mkdir -p "/etc/sysupdate.d/${feature}.feature.d"
+    printf '[Feature]\nEnabled=true\n' > "/etc/sysupdate.d/${feature}.feature.d/enable.conf"
+done
 for f in /usr/lib/sysupdate.d/*.transfer; do
     sed -e 's|^Path=https://.*|Path=http://10.0.2.2:@DOGFOOD_PORT@/|' \
         "${f}" > "/etc/sysupdate.d/${f##*/}"
@@ -111,17 +139,23 @@ systemctl start systemd-sysupdate-reboot.service
 echo "PROBE interlock=$(systemctl show -P Result systemd-sysupdate-reboot.service)"
 systemctl stop kubelet.service
 EOF
-sed -i -e "s|@DOGFOOD_PORT@|${DOGFOOD_PORT}|" -e "s|@FEATURE@|${feature}|" \
+sed -i -e "s|@DOGFOOD_PORT@|${DOGFOOD_PORT}|" -e "s|@FEATURES@|${features}|" \
     -e "s|@TOOLKIT@|${toolkit}|" "${state}/update.probe"
 
-# The lock-step sysext matching the booted version $1 is active in log $2.
+# The lock-step sysexts matching the booted version $1 are active in log $2.
 sysext_active() {
     local v="$1" log="$2" ctk
-    if [ "${sysext}" = zfs ]; then
+    if [ "${want_zfs}" = 1 ]; then
         grep -q "PROBE zfs=active" "${log}"
-        return
+        grep -q "PROBE zfs-module=loaded load=success" "${log}"
     fi
+    [ "${want_nvidia}" = 1 ] || return 0
     grep -q "PROBE nvidia-driver=${v} image=${v} file=nvidia-open-595_${v}.raw guard=active load=exec-condition" "${log}"
+    grep -q "PROBE nvidia-sig=sha512 sha512 sha512 sha512 " "${log}"
+    grep -q "PROBE nvidia-helper=1 modprobe: ERROR: could not insert 'nvidia': No such device " "${log}"
+    grep -Eq "PROBE nvidia-no-gpu=[1-9]" "${log}"
+    grep -q "PROBE nvidia-rejected=0" "${log}"
+    grep -q "PROBE nouveau-blacklisted=1" "${log}"
     ctk="$(ls "${next}"/nvidia-container-toolkit-*.raw.zst | sed -n 's|.*/nvidia-container-toolkit-\(.*\)\.raw\.zst$|\1|p')"
     grep -q "PROBE nvidia-toolkit=merged activate=success ctk=NVIDIA Container Toolkit CLI version ${ctk}" "${log}"
     grep -Eq "PROBE nvidia-toolkit-staged=.*nvidia-container-toolkit-${ctk}\.raw " "${log}"
@@ -151,7 +185,7 @@ new_ver="$(ls "${next}"/bluefin-server-[0-9]*.efi | sed -n 's|.*/bluefin-server-
 grep -q "PROBE os=bluefin-server ${new_ver}" "${state}/4-updated.log"
 sysext_active "${new_ver}" "${state}/4-updated.log"
 grep -q "PROBE health=active active bless=good" "${state}/4-updated.log"
-[ -n "${broken}" ] || { echo "PASS: installed, updated A->B and booted ${new_ver} with the ${feature} sysext"; exit 0; }
+[ -n "${broken}" ] || { echo "PASS: installed, updated A->B and booted ${new_ver} with the ${features} sysext(s)"; exit 0; }
 
 bad_ver="$(ls "${broken}"/bluefin-server-[0-9]*.efi | sed -n 's|.*/bluefin-server-\(.*\)\.efi$|\1|p')"
 mode="${DOGFOOD_BROKEN:-slot}"
@@ -221,4 +255,4 @@ if [ "${mode}" = unit ]; then
     grep -q "PROBE after-rollback reboot-unit=exec-condition" "${state}/6-rollback.log"
     grep -q "PROBE failed=0" "${state}/6-rollback.log"
 fi
-echo "PASS: installed, updated A->B, and rolled back from a broken (${mode}) ${bad_ver} to ${new_ver} with the ${feature} sysext"
+echo "PASS: installed, updated A->B, and rolled back from a broken (${mode}) ${bad_ver} to ${new_ver} with the ${features} sysext(s)"
