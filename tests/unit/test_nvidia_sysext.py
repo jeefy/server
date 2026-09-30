@@ -229,9 +229,17 @@ def test_gpu_detection(tmp_path: Path, devices: list[tuple[str, str]], present: 
     assert result.returncode == (0 if present else 1), "1 skips the unit; it never fails"
 
 
-@pytest.mark.parametrize("merged,ok", [(["nvidia-open-595_1"], True), (["nvidia-open-595_1", "nvidia-open-615_1"], False)])
+@pytest.mark.parametrize(
+    "merged,ok",
+    [
+        (["nvidia-open-595_1"], True),
+        (["nvidia-open-595_1", "nvidia-open-615_1"], False),
+        (["nvidia-open-595_1", "zfs_1"], False),
+        (["nvidia-open-595_1", "kubestellar_1"], True),
+    ],
+)
 def test_flavour_guard(tmp_path: Path, merged: list[str], ok: bool) -> None:
-    for name in merged + ["zfs_1"]:
+    for name in merged:
         (tmp_path / f"extension-release.{name}").write_text("ID=bluefin-server\n")
     (argv,) = SystemdFile(SRC / "nvidia-flavour-guard.service").commands()
     argv = [word.replace("/usr/lib/extension-release.d", str(tmp_path)) for word in argv]

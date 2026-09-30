@@ -214,7 +214,9 @@ variables:
 
     # depmod over the base image's modules plus NVIDIA's; ship only its
     # outputs, which shadow the base image's copies through the overlay. Safe
-    # only because the sysext is locked to one image VERSION_ID.
+    # only because the sysext is locked to one image VERSION_ID. The OpenZFS
+    # sysext shadows the same files, so the two are mutually exclusive;
+    # nvidia-flavour-guard.service refuses a merge that holds both.
     mkdir -p "depmod-root%{indep-libdir}"
     cp -a "/kernel-modules${moddir}" "depmod-root${moddir}"
     mkdir -p "depmod-root${moddir}/${kver}/extra"
