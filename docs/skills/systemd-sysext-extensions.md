@@ -4,7 +4,7 @@ description: Extensibility via systemd-sysext and systemd-confext for Bluefin Se
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-30"
+  last_updated: "2026-10-01"
   context7-sources:
     - /systemd/systemd
 ---
@@ -84,6 +84,23 @@ QEMU, and `DOGFOOD_SYSEXT=nvidia scripts/dogfood-install.sh` (or
 update and a rollback. Their units skip themselves on a node without an
 NVIDIA GPU, and `nvidia-flavour-guard.service` fails when two flavours are
 merged.
+
+The **homelab** sysext (`oci/homelab-sysext.bst`, `homelab_<image-version>.raw`,
+sysupdate feature `homelab`) is version-locked the same way and carries no
+binaries: the default homelab component set as plain YAML under
+`/usr/share/bluefin/homelab/<NN-component>/`, rendered offline by
+`scripts/render-homelab-manifests.py` (`just render-homelab-manifests`) from
+upstream charts and manifests pinned by version and sha256, with every image
+pinned by digest; the build only stages the committed files. Its
+`bluefin-homelab-apply.service` is wanted by `kubelet.service` and
+`k0scontroller.service` and runs only when `/etc/bluefin/homelab.conf` exists
+(`homelab.conf.example` next to the manifests lists every key). It waits for
+the API server of the node's kubeadm or k0s control plane, then server-side
+applies the enabled components in the order of the `components` index (Cilium
+only on kubeadm, metrics-server only on kubeadm because k0s ships its own),
+waiting for CRDs and rollouts in between, fills `${HOMELAB_*}` placeholders
+from `homelab.conf`, skips files whose inputs are unset, and never deletes.
+A failed run is retried by the unit.
 
 The toolkit is delivered like k0s: the sysupdate component
 `nvidia-container-toolkit` (`/usr/lib/sysupdate.nvidia-container-toolkit.d/`)

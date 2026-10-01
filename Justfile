@@ -68,7 +68,7 @@ validate: gen-dev-keys
     python3 .github/scripts/check-release-version.py
     python3 .github/scripts/check-k0s-version.py
     python3 .github/scripts/check-renovate-series.py
-    just bst show --deps all oci/bluefin-server-image.bst oci/k0s-sysext.bst oci/kubestellar-sysext.bst oci/zfs-sysext.bst oci/kubeadm-sysext.bst oci/nvidia-open-595-sysext.bst oci/nvidia-container-toolkit-sysext.bst
+    just bst show --deps all oci/bluefin-server-image.bst oci/k0s-sysext.bst oci/kubestellar-sysext.bst oci/zfs-sysext.bst oci/kubeadm-sysext.bst oci/homelab-sysext.bst oci/nvidia-open-595-sysext.bst oci/nvidia-container-toolkit-sysext.bst
 
 # Run the unit test suite (pytest + bats; bats from a container if not installed).
 [group('dev')]
@@ -201,6 +201,27 @@ export-zfs-sysext: build-zfs-sysext
     grep 'raw.zst$' dist/zfs-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
     rm -rf dist/zfs-checkout
     @echo "==> wrote zfs sysext:" && ls -lh dist/sysext/
+
+# Build the homelab sysext (component manifests + bluefin-homelab-apply).
+[group('sysext')]
+build-homelab-sysext:
+    just bst build oci/homelab-sysext.bst
+
+# Export the homelab sysext + SHA256SUMS to dist/sysext/.
+[group('sysext')]
+export-homelab-sysext: build-homelab-sysext
+    rm -rf dist/homelab-checkout
+    mkdir -p dist/sysext
+    just bst artifact checkout oci/homelab-sysext.bst --directory /src/dist/homelab-checkout
+    cp dist/homelab-checkout/homelab_*.raw.zst dist/sysext/
+    grep 'raw.zst$' dist/homelab-checkout/SHA256SUMS >> dist/sysext/SHA256SUMS
+    rm -rf dist/homelab-checkout
+    @echo "==> wrote homelab sysext:" && ls -lh dist/sysext/
+
+# Re-render files/homelab/manifests/ from the pins in the render script (network, podman).
+[group('sysext')]
+render-homelab-manifests:
+    python3 scripts/render-homelab-manifests.py
 
 # Build an NVIDIA driver sysext (open kernel modules; locked to one image version).
 [group('sysext')]

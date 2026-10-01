@@ -24,6 +24,7 @@ description: |
                                            systemd-sysinstall lays onto the target disk
     efi-keys/                              Secure Boot enrollment payloads
     zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst, kubeadm_<ver>.raw.zst,
+    homelab_<ver>.raw.zst,
     nvidia-open-595_<ver>.raw.zst          opt-in sysexts locked to this image version
     k0s-<k0s-ver>.raw.zst                  opt-in k0s sysext (own version axis)
     nvidia-container-toolkit-<ctk-ver>.raw.zst
@@ -72,6 +73,9 @@ build-depends:
 - filename: oci/kubeadm-sysext.bst
   config:
     location: /sysext/kubeadm
+- filename: oci/homelab-sysext.bst
+  config:
+    location: /sysext/homelab
 - filename: oci/nvidia-open-595-sysext.bst
   config:
     location: /sysext/nvidia-open-595
@@ -184,6 +188,7 @@ config:
     cp /sysext/k0s/k0s-*.raw.zst /sysext/kubestellar/kubestellar_%{image-version}.raw.zst \
        /sysext/zfs/zfs_%{image-version}.raw.zst \
        /sysext/kubeadm/kubeadm_%{image-version}.raw.zst \
+       /sysext/homelab/homelab_%{image-version}.raw.zst \
        /sysext/nvidia-open-595/nvidia-open-595_%{image-version}.raw.zst \
        /sysext/nvidia-container-toolkit/nvidia-container-toolkit-*.raw.zst "%{install-root}/"
 
