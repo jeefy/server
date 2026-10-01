@@ -223,6 +223,12 @@ export-nvidia-sysext FLAVOUR="nvidia-open-595": (build-nvidia-sysext FLAVOUR)
 dogfood-nvidia FLAVOUR="nvidia-open-595":
     bash scripts/dogfood-nvidia.sh dist/diskless "dist/diskless/{{FLAVOUR}}_$(sed -n 's/^  image-version: "\(.*\)"$/\1/p' include/image.yml).raw.zst"
 
+# Boot dist/diskless/ in QEMU as a single-node kubeadm control plane (needs helm
+# and guest internet for the control-plane and Cilium images).
+[group('sysext')]
+dogfood-kubeadm:
+    bash scripts/dogfood-kubeadm.sh dist/diskless
+
 # Build the NVIDIA Container Toolkit (CDI) systemd-sysext (own version axis).
 [group('sysext')]
 build-nvidia-container-toolkit-sysext:
