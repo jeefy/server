@@ -24,7 +24,7 @@ ELEMENT = ROOT / "elements" / "oci" / "homelab-sysext.bst"
 RENDER = ROOT / "scripts" / "render-homelab-manifests.py"
 DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
 
-# The plan's default component set, in apply order.
+# The default component set, in apply order (monitoring is opt-in).
 EXPECTED = [
     ("10-cilium", "on", "kubeadm"),
     ("20-local-path-provisioner", "on", "kubeadm,k0s"),
@@ -37,9 +37,9 @@ EXPECTED = [
     ("60-metrics-server", "on", "kubeadm"),
     ("61-reloader", "on", "kubeadm,k0s"),
     ("62-kured", "on", "kubeadm,k0s"),
-    ("70-kube-prometheus-stack", "on", "kubeadm,k0s"),
-    ("71-loki", "on", "kubeadm,k0s"),
-    ("72-alloy", "on", "kubeadm,k0s"),
+    ("70-kube-prometheus-stack", "off", "kubeadm,k0s"),
+    ("71-loki", "off", "kubeadm,k0s"),
+    ("72-alloy", "off", "kubeadm,k0s"),
     ("80-gpu-operator", "off", "kubeadm,k0s"),
 ]
 

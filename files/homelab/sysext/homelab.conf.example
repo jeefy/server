@@ -4,8 +4,9 @@
 # Components: HOMELAB_<ID>=yes|no overrides the default listed in
 # /usr/share/bluefin/homelab/components. On by default: CILIUM (kubeadm only),
 # LOCAL_PATH_PROVISIONER, METALLB, ENVOY_GATEWAY, CERT_MANAGER, ARGOCD,
-# METRICS_SERVER (kubeadm only), RELOADER, KURED, KUBE_PROMETHEUS_STACK, LOKI,
-# ALLOY. Off by default: NFS, DEMOCRATIC_CSI, GPU_OPERATOR.
+# METRICS_SERVER (kubeadm only), RELOADER, KURED. Off by default: NFS,
+# DEMOCRATIC_CSI, GPU_OPERATOR and monitoring (KUBE_PROMETHEUS_STACK, LOKI,
+# ALLOY; enable all three together).
 
 # MetalLB L2 address pool: free LAN addresses outside your DHCP range (ranges
 # or CIDRs, comma separated). Required for LoadBalancer Services.
@@ -40,3 +41,8 @@
 # NVIDIA GPU Operator: needs the nvidia-open-* and nvidia-container-toolkit
 # sysexts on the node.
 #HOMELAB_GPU_OPERATOR=yes
+
+# Monitoring: Prometheus/Alertmanager/Grafana, Loki and Alloy (pod + journal logs).
+#HOMELAB_KUBE_PROMETHEUS_STACK=yes
+#HOMELAB_LOKI=yes
+#HOMELAB_ALLOY=yes
