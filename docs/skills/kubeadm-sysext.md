@@ -156,7 +156,7 @@ on the host and internet access from the guest.
 
 ## Host tools
 
-kubeadm v1.34 preflight requires only `losetup`, `mount` and `cp` in `PATH`
+kubeadm v1.35 preflight requires only `losetup`, `mount` and `cp` in `PATH`
 (base image); `conntrack` stopped being required in v1.32. `iptables`,
 `ethtool`, `socat` and `conntrack` are not shipped: Cilium carries its own
 iptables, kube-proxy is replaced, and containerd 2 port-forwards in-process.

@@ -40,8 +40,8 @@ def test_versions_stay_on_the_cluster_nodes_series() -> None:
             assert re.fullmatch(r"\d+\.\d+\.\d+", version), name
             series[name] = version.rsplit(".", 1)[0]
     assert series == {
-        "kubernetes-version": "1.34",
-        "crictl-version": "1.34",
+        "kubernetes-version": "1.35",
+        "crictl-version": "1.35",
         "containerd-version": "2.1",
         "runc-version": "1.3",
         "cni-plugins-version": "1.1",
