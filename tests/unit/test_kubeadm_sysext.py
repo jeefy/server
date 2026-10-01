@@ -97,7 +97,11 @@ def test_no_preset_enables_the_units() -> None:
         for line in (SRC / "80-kubeadm.preset").read_text().splitlines()
         if line and not line.startswith("#")
     ]
-    assert lines == [["disable", "containerd.service"], ["disable", "kubelet.service"]]
+    assert lines == [
+        ["disable", "containerd.service"],
+        ["disable", "kubelet.service"],
+        ["disable", "kubeadm-init.service"],
+    ]
     assert "20-ignition.preset" < "80-kubeadm.preset" < "90-systemd.preset"
     for preset in (ROOT / "files").rglob("*.preset"):
         for line in preset.read_text().splitlines():
