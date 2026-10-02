@@ -104,8 +104,9 @@ applied_components() {
     run_applier
     [ "$status" -eq 0 ]
     [[ "$output" == *"runtime kubeadm, kubeconfig ${FAKE_ROOT}/etc/kubernetes/admin.conf"* ]]
-    [ "$(applied_components)" = "cilium local-path-provisioner metallb envoy-gateway cert-manager argocd metrics-server reloader kured kube-prometheus-stack loki alloy" ]
+    [ "$(applied_components)" = "cilium local-path-provisioner metallb envoy-gateway cert-manager argocd metrics-server reloader kured" ]
     [[ "$output" == *"nfs: disabled (HOMELAB_NFS)"* ]]
+    [[ "$output" == *"kube-prometheus-stack: disabled (HOMELAB_KUBE_PROMETHEUS_STACK)"* ]]
     [[ "$output" == *"gpu-operator: disabled (HOMELAB_GPU_OPERATOR)"* ]]
     grep -q -- '--kubeconfig .*/etc/kubernetes/admin.conf apply --server-side --force-conflicts --field-manager=bluefin-homelab' "${LOG}"
     ! grep -qw delete "${LOG}"
@@ -130,7 +131,7 @@ applied_components() {
     [[ "$output" == *"runtime k0s"* ]]
     [[ "$output" == *"cilium: not used with k0s"* ]]
     [[ "$output" == *"metrics-server: not used with k0s"* ]]
-    [ "$(applied_components)" = "local-path-provisioner metallb envoy-gateway cert-manager argocd reloader kured kube-prometheus-stack loki alloy" ]
+    [ "$(applied_components)" = "local-path-provisioner metallb envoy-gateway cert-manager argocd reloader kured" ]
     grep -q -- "--kubeconfig ${FAKE_ROOT}/var/lib/k0s/pki/admin.conf" "${LOG}"
 }
 
@@ -145,7 +146,7 @@ applied_components() {
 
 @test "homelab.conf switches components on and off" {
     kubeadm_node
-    run_applier HOMELAB_GPU_OPERATOR=yes HOMELAB_LOKI=no HOMELAB_ALLOY=off HOMELAB_KURED=maybe
+    run_applier HOMELAB_GPU_OPERATOR=yes HOMELAB_KUBE_PROMETHEUS_STACK=yes HOMELAB_LOKI=no HOMELAB_ALLOY=off HOMELAB_KURED=maybe
     [ "$status" -eq 0 ]
     [ "$(applied_components)" = "cilium local-path-provisioner metallb envoy-gateway cert-manager argocd metrics-server reloader kured kube-prometheus-stack gpu-operator" ]
     [[ "$output" == *"ignoring HOMELAB_KURED=maybe: expected yes or no"* ]]
@@ -176,14 +177,14 @@ applied_components() {
 
 @test "Grafana's admin Secret is generated once, never rotated, never logged" {
     kubeadm_node
-    run_applier
+    run_applier HOMELAB_KUBE_PROMETHEUS_STACK=yes
     line=$(grep 'create secret generic grafana-admin' "${LOG}")
     [[ "${line}" == *"--from-literal=admin-user=admin"* ]]
     [[ "${line}" =~ --from-literal=admin-password=[0-9a-f]{48} ]]
     password=$(sed 's/.*admin-password=\([0-9a-f]*\).*/\1/' <<<"${line}")
     [[ "$output" != *"${password}"* ]]
     : >"${LOG}"
-    run_applier SECRET_RC=0
+    run_applier SECRET_RC=0 HOMELAB_KUBE_PROMETHEUS_STACK=yes
     ! grep -q 'create secret generic grafana-admin' "${LOG}"
 }
 
@@ -223,7 +224,7 @@ applied_components() {
     [ "$status" -eq 1 ]
     [[ "$output" == *"did not roll out"* ]]
     [[ "$output" == *"<3>failed: "* ]]
-    [[ "$(applied_components)" == *"alloy"* ]]
+    [[ "$(applied_components)" == *"kured"* ]]
 }
 
 @test "a second run applies the same files again (idempotent, no deletes)" {
