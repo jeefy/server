@@ -2,6 +2,14 @@
 Description=Activate the NVIDIA Container Toolkit sysext on boot
 Wants=nvidia-container-toolkit-fetch.service
 After=nvidia-container-toolkit-fetch.service
+# Ordering only (no Wants=): try-restart below collapses to a no-op unless
+# containerd is already active, and a containerd still `activating` (Type=notify,
+# CRI init) would be skipped, leaving the node without the nvidia handler until
+# someone restarts it by hand. When the .raw is already seeded the fetch unit is
+# skipped and this merge runs early, so wait for containerd to finish starting
+# whenever it is part of the same transaction. A node without containerd.service
+# is unaffected.
+After=containerd.service
 RequiresMountsFor=/var/lib/nvidia-container-toolkit
 
 [Service]

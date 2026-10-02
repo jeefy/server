@@ -69,6 +69,15 @@ def test_activation_merges_through_run_extensions_after_a_soft_fetch() -> None:
     assert FETCH.name in unit.words("Unit", "Wants") and FETCH.name in unit.words("Unit", "After")
     for hard in ("Requires", "Requisite", "BindsTo"):
         assert FETCH.name not in unit.words("Unit", hard), "a failed fetch must not fail activation"
+    assert "containerd.service" in unit.words("Unit", "After"), (
+        "try-restart is a JOB_NOP while containerd is still activating, so the "
+        "merge must wait for it to finish starting"
+    )
+    for hard in ("Wants", "Requires", "Requisite", "BindsTo"):
+        assert "containerd.service" not in unit.words("Unit", hard), (
+            "containerd.service ships in the kubeadm sysext only; this must stay "
+            "ordering-only"
+        )
     assert unit.value("Service", "StateDirectory") == "nvidia-container-toolkit"
     assert unit.value("Service", "RemainAfterExit") == "yes", (
         "bluefin-sysext-activate.service re-requests multi-user.target; without "

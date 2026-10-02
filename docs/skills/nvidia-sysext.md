@@ -246,7 +246,14 @@ the toolkit before containerd starts, but an installed node merges it later
 (the activate unit waits for the network fetch) while containerd is already
 up, so the glob would match nothing. `nvidia-container-toolkit-activate`
 therefore runs `systemctl try-restart containerd.service` after the refresh;
-containers survive it (`KillMode=process`). A node that rewrites
+containers survive it (`KillMode=process`). `try-restart` only acts on an
+*active* unit — systemd turns it into a no-op for a unit that is inactive or
+still `activating` — so the activate unit is ordered `After=containerd.service`
+(ordering only, no `Wants=`: a node without the kubeadm sysext has no such
+unit). Otherwise, on a node whose `.raw` is already seeded the fetch unit is
+skipped, the merge runs while containerd is still `activating` (`Type=notify`),
+the restart is skipped, and `RuntimeClass nvidia` keeps failing until someone
+restarts containerd by hand. A node that rewrites
 `/etc/containerd/config.toml` afterwards still restarts containerd itself.
 
 `nvidia-container-runtime.cdi` honours `NVIDIA_VISIBLE_DEVICES` even for
