@@ -158,7 +158,9 @@ plus `apiServer.certSANs` to the `/etc` copy (unless it already sets an
 endpoint), so nodes reach the API by mDNS name. Nodes (`HOMELAB_ROLE=node`)
 join with a passphrase-authenticated bootstrap token; protocol, files and
 threat model: [`files/homelab/cluster/README.md`](../../files/homelab/cluster/README.md).
-`just dogfood-homelab-cluster` checks it in QEMU.
+`just dogfood-homelab-cluster` checks it in QEMU. The homelab Ignition
+templates set all of this up from one file
+([homelab-profile.md](homelab-profile.md)).
 
 `just dogfood-kubeadm` checks the whole path in QEMU: a diskless boot whose
 Ignition does only the above, then a test-only pinned Cilium. It needs `helm`
