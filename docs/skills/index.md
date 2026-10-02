@@ -4,7 +4,7 @@ description: Lazy-load manifest for Bluefin Server skills. Load this file after 
 metadata:
   type: index
   status: stable
-  last_updated: "2026-09-28"
+  last_updated: "2026-10-01"
 ---
 # docs/skills — Index
 
@@ -32,6 +32,7 @@ This is the lazy-load routing table for agent skills. Keep this file in memory w
 | [`diskless-troubleshooting.md`](diskless-troubleshooting.md) | Diskless node reboot-loops, RAM sizing, keeping logs, writing Ignition configs | Failure summary, minimum RAM, failure modes, logs, supported Ignition subset. |
 | [`factory-integration.md`](factory-integration.md) | Lab integration, boot-test workflow, factory role | How Bluefin Server is consumed by the CI lab. |
 | [`gap-analysis-distros.md`](gap-analysis-distros.md) | Comparing Bluefin Server to other server OSes | Source-verified comparison to Ubuntu, Talos, Flatcar, FCOS. |
+| [`homelab-profile.md`](homelab-profile.md) | The homelab Ignition templates, how they pull in the sysexts, the USB installer's Homelab entries | Templates per runtime and role, what they turn on, publication, QEMU checks. |
 | [`kubeadm-sysext.md`](kubeadm-sysext.md) | Joining a kubeadm cluster, single-node kubeadm control plane, kubelet/containerd sysext, Kubernetes kernel options | Build and runtime contract for the kubeadm sysext (worker or single-node control plane). |
 | [`k0s-sysext-ops.md`](k0s-sysext-ops.md) | Operating k0s or the KubeStellar appliance on Bluefin Server | Runtime operation and troubleshooting for the k0s and KubeStellar sysexts. |
 | [`k0s-sysext.md`](k0s-sysext.md) | Building the k0s sysext | BuildStream element and publish steps for the k0s sysext. |
