@@ -250,10 +250,17 @@ apply_file() {
 		fi
 		sleep "${POLL}"
 	done
-	if grep -q '^kind: CustomResourceDefinition$' "${rendered}" &&
-		! k wait --for=condition=Established --timeout="${WAIT_TIMEOUT}s" -f "${rendered}" >/dev/null; then
-		err "${COMPONENT}: CRDs in $(basename "${file}") not Established"
-		return 1
+	# Until the API server has filled in a new CRD's .status, kubectl wait
+	# fails at once (".status.conditions accessor error") instead of
+	# waiting; retry until the deadline.
+	if grep -q '^kind: CustomResourceDefinition$' "${rendered}"; then
+		until k wait --for=condition=Established --timeout="$((deadline > SECONDS ? deadline - SECONDS : 1))s" -f "${rendered}" >"${WORK}/wait.log" 2>&1; do
+			if [ "${SECONDS}" -ge "${deadline}" ]; then
+				err "${COMPONENT}: CRDs in $(basename "${file}") not Established: $(tail -n1 "${WORK}/wait.log")"
+				return 1
+			fi
+			sleep "${POLL}"
+		done
 	fi
 	while read -r kind ns name; do
 		case ${kind} in Deployment | DaemonSet | StatefulSet) ;; *) continue ;; esac

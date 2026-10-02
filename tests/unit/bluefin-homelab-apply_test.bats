@@ -29,7 +29,10 @@ case \${args} in
     n=\$(ls "${APPLIED}" | wc -l)
     cp "\${last}" "${APPLIED}/\$(printf %03d "\${n}")-\$(basename "\${last}")"
     exit \${APPLY_RC:-0} ;;
-*" wait "*) exit 0 ;;
+*" wait "*)
+    c=\$(cat "${BATS_TEST_TMPDIR}/waits" 2>/dev/null || echo 0)
+    echo \$((c + 1)) >"${BATS_TEST_TMPDIR}/waits"
+    [ "\${c}" -ge "\${WAIT_FAILS:-0}" ]; exit \$? ;;
 *" get secret "*) exit \${SECRET_RC:-1} ;;
 *" create secret "*) printf 'kind: Secret\n' ; exit 0 ;;
 *" get -f "*)
@@ -239,6 +242,28 @@ EOF
     sequence=$(grep -oE 'wait --for=condition=Established|apply .* -f [^ ]*/[0-9]+-[a-z-]+\.yaml|create secret generic s|rollout status deployment/web' "${LOG}" |
         sed -E 's#apply .* -f [^ ]*/##' | paste -sd' ')
     [ "${sequence}" = "00-crds.yaml wait --for=condition=Established 01-namespace.yaml create secret generic s 10-demo.yaml rollout status deployment/web 20-config.yaml" ]
+}
+
+@test "a CRD wait that fails before the API server fills in its status is retried" {
+    MANIFESTS="${BATS_TEST_TMPDIR}/manifests"
+    mkdir -p "${MANIFESTS}/10-demo"
+    echo '10-demo on kubeadm,k0s' >"${MANIFESTS}/components"
+    printf 'apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: x\n' >"${MANIFESTS}/10-demo/00-crds.yaml"
+    kubeadm_node
+    run_applier HOMELAB_WAIT_TIMEOUT=30 WAIT_FAILS=2
+    [ "$status" -eq 0 ]
+    [ "$(grep -c 'wait --for=condition=Established' "${LOG}")" -eq 3 ]
+}
+
+@test "CRDs that never become Established fail the run" {
+    MANIFESTS="${BATS_TEST_TMPDIR}/manifests"
+    mkdir -p "${MANIFESTS}/10-demo"
+    echo '10-demo on kubeadm,k0s' >"${MANIFESTS}/components"
+    printf 'apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name: x\n' >"${MANIFESTS}/10-demo/00-crds.yaml"
+    kubeadm_node
+    run_applier WAIT_FAILS=1000000
+    [ "$status" -ne 0 ]
+    [[ "${output}" == *"CRDs in 00-crds.yaml not Established"* ]]
 }
 
 @test "a component that does not roll out fails the run, later ones still apply" {
