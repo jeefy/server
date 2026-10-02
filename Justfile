@@ -250,6 +250,12 @@ dogfood-nvidia FLAVOUR="nvidia-open-595":
 dogfood-kubeadm:
     bash scripts/dogfood-kubeadm.sh dist/diskless
 
+# Boot dist/diskless/ in QEMU as a two-node homelab (control plane + a node that
+# joins with the passphrase over mDNS) plus a wrong-passphrase node (guest internet).
+[group('sysext')]
+dogfood-homelab-cluster:
+    bash scripts/dogfood-homelab-cluster.sh dist/diskless
+
 # Build the NVIDIA Container Toolkit (CDI) systemd-sysext (own version axis).
 [group('sysext')]
 build-nvidia-container-toolkit-sysext:

@@ -30,6 +30,9 @@
 #                              (HTTP boot); the netboot UKI's transitional
 #                              bluefin.ignition.allow-unsigned default accepts it
 #   DOGFOOD_SERVE_EXTRA=<dir>  also serve the files in <dir>
+#   DOGFOOD_NET="<qemu args>"  network devices instead of one user-net NIC (not with
+#                              DOGFOOD_BOOT=http); e.g. a hub joining user-net and
+#                              dgram links to other guests (dogfood-homelab-cluster.sh)
 #   DOGFOOD_TAMPER=raw|sums    serve a corrupted image (raw), or a corrupted image with
 #                              SHA256SUMS re-hashed to match it but no longer matching
 #                              SHA256SUMS.gpg (sums); --check then passes only if the
@@ -145,6 +148,9 @@ fi
 if [ "${boot}" = http ]; then
     qemu+=(-netdev "user,id=n0,bootfile=${DOGFOOD_BOOT_URL:-http://10.0.2.2:${port}/bluefin-server-netboot_${ver}.efi}"
            -device virtio-net-pci,netdev=n0,bootindex=1)
+elif [ -n "${DOGFOOD_NET:-}" ]; then
+    read -r -d "" -a net_args <<<"${DOGFOOD_NET}" || true
+    qemu+=("${net_args[@]}")
 else
     qemu+=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0)
 fi
