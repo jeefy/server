@@ -283,6 +283,12 @@ dogfood-homelab-cluster:
 dogfood-homelab-templates:
     bash scripts/dogfood-homelab-templates.sh dist/diskless
 
+# QEMU: offline installs of a control plane and a node from the USB
+# installer's Homelab entries, then the cluster (needs guest internet).
+[group('sysext')]
+dogfood-homelab-installer:
+    bash scripts/dogfood-homelab-installer.sh dist/diskless
+
 # Build the NVIDIA Container Toolkit (CDI) systemd-sysext (own version axis).
 [group('sysext')]
 build-nvidia-container-toolkit-sysext:
