@@ -22,6 +22,10 @@ description: |
                                            signed systemd-boot, the installer UKI, key
                                            enrollment, and the disk UKI + repart.d that
                                            systemd-sysinstall lays onto the target disk
+    homelab-control-plane.bu/.ign, homelab-node.bu/.ign,
+    homelab-k0s-control-plane.bu/.ign, homelab-k0s-node.bu/.ign
+                                           homelab Ignition templates: Butane source
+                                           and compiled Ignition (homelab/homelab-templates.bst)
     efi-keys/                              Secure Boot enrollment payloads
     zfs_<ver>.raw.zst, kubestellar_<ver>.raw.zst, kubeadm_<ver>.raw.zst,
     homelab_<ver>.raw.zst,
@@ -85,6 +89,9 @@ build-depends:
 - filename: oci/bluefin-server-sbom.bst
   config:
     location: /sbom
+- filename: homelab/homelab-templates.bst
+  config:
+    location: /homelab-templates
 
 variables:
   image-name: bluefin-server_%{image-version}
@@ -191,6 +198,7 @@ config:
        /sysext/homelab/homelab_%{image-version}.raw.zst \
        /sysext/nvidia-open-595/nvidia-open-595_%{image-version}.raw.zst \
        /sysext/nvidia-container-toolkit/nvidia-container-toolkit-*.raw.zst "%{install-root}/"
+    install -m644 -t "%{install-root}" /homelab-templates/*.bu /homelab-templates/*.ign
 
   - |
     set -eu
@@ -210,7 +218,7 @@ config:
   - |
     set -eu
     cd "%{install-root}"
-    sha256sum --binary *.raw *.efi *.raw.zst *.spdx.json > SHA256SUMS
+    sha256sum --binary *.raw *.efi *.raw.zst *.spdx.json *.bu *.ign > SHA256SUMS
     cat SHA256SUMS
     export GNUPGHOME=/tmp/gnupg
     mkdir -m 0700 -p "${GNUPGHOME}"
