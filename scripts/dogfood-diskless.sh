@@ -21,6 +21,8 @@
 #   DOGFOOD_CREDS=<dir>        pass every file in <dir> as a system credential named after it
 #   DOGFOOD_STATE_DISK=<file>  attach a persistent second disk (/dev/vdb), created if missing
 #   DOGFOOD_EXTRA_PROBE=<file> shell snippet appended to the in-guest probe
+#   DOGFOOD_PROBE_LOG=<file>   write the probe's output there while it runs (default: a
+#                              temporary file), for a caller that reacts to it
 #   DOGFOOD_VARS=<file>        persistent UEFI variable store (keeps enrolled keys)
 #   DOGFOOD_BOOT=disk          boot DOGFOOD_STATE_DISK instead of the netboot ESP
 #   DOGFOOD_BOOT=http          UEFI HTTP boot the netboot UKI (the initrd derives the
@@ -63,6 +65,7 @@ vars_tmpl="${OVMF_VARS:-$(first_existing \
     /usr/share/edk2/x64/OVMF_VARS.4m.fd)}" || { echo "ERROR: no blank OVMF_VARS found (set OVMF_VARS)" >&2; exit 1; }
 
 work="$(mktemp -d /tmp/bluefin-dogfood.XXXXXX)"
+probe_log="${DOGFOOD_PROBE_LOG:-${work}/probe.log}"
 # Never leave a guest behind: an orphaned QEMU keeps its port and the caller's
 # locks. Only kill PIDs that are set; `kill 0` signals the whole process group.
 cleanup() {
@@ -238,12 +241,12 @@ UNIT
 
 # The probe reports on a second serial port: the getty on ttyS0 hangs up the
 # console (vhangup) and would cut off a probe still writing to it.
-"${qemu[@]}" -display none -monitor none -serial "file:${work}/serial.log" -serial "file:${work}/probe.log" \
+"${qemu[@]}" -display none -monitor none -serial "file:${work}/serial.log" -serial "file:${probe_log}" \
     -smbios "$(cred dogfood.probe "${work}/probe.sh")" \
     -smbios "$(cred systemd.extra-unit.dogfood-probe.service "${work}/probe.service")" \
     </dev/null >/dev/null 2>&1 &
 qemu_pid=$!
-probe_done() { grep -aq 'PROBE failed=' "${work}/probe.log" 2>/dev/null; }
+probe_done() { grep -aq 'PROBE failed=' "${probe_log}" 2>/dev/null; }
 # Console output interleaves CSI, OSC and DCS escape sequences, sometimes in the
 # middle of a line (the initrd's failure summary writes to the console while
 # systemd-importd logs), so strip all three before matching.
@@ -258,7 +261,7 @@ fi
 wait_for "${timeout_s}" "${qemu_pid}" stop && status=0
 kill "${qemu_pid}" 2>/dev/null || true
 wait "${qemu_pid}" 2>/dev/null || true
-cat "${work}/serial.log" "${work}/probe.log" 2>/dev/null \
+cat "${work}/serial.log" "${probe_log}" 2>/dev/null \
     | clean_log > "${dir}/dogfood-serial.log"
 grep -a 'GET ' "${work}/http.log" > "${dir}/dogfood-http.log" || true
 grep -aoE 'PROBE[ -].*' "${dir}/dogfood-serial.log" || true
