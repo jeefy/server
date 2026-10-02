@@ -8,6 +8,8 @@ export oras_image := env("ORAS_IMAGE", "ghcr.io/oras-project/oras:v1.3.4")
 export bst2_image := env("BST2_IMAGE", "registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:64eb0b4930d57a92710822898fb73af6cc1ae35d")
 # bats for `just test-unit` when none is installed -- pinned by digest.
 export bats_image := env("BATS_IMAGE", "docker.io/bats/bats:1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f")
+# butane (v2.27.0, built from the Ignition tree) for `just homelab-templates` -- pinned by digest.
+export butane_image := env("BUTANE_IMAGE", "quay.io/coreos/butane:release@sha256:d264fba5a02ec7a5525b7cd4ab04090e8c70d0ee42a74a90a0e2f89633ae720c")
 
 # Prefix for podman calls: empty when rootless podman works, "sudo" otherwise.
 sudo_cmd := if `podman info >/dev/null 2>&1 && echo 1 || echo 0` == "1" { "" } else { "sudo" }
@@ -222,6 +224,25 @@ export-homelab-sysext: build-homelab-sysext
 [group('sysext')]
 render-homelab-manifests:
     python3 scripts/render-homelab-manifests.py
+
+# Compile the homelab Butane templates (files/homelab/templates/*.bu) to the
+# Ignition .ign next to each; CHECK=1 only fails if a committed .ign differs.
+[group('sysext')]
+homelab-templates CHECK="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rc=0
+    for bu in files/homelab/templates/*.bu; do
+        ign="${bu%.bu}.ign"
+        out="$({{sudo_cmd}} podman run --rm -i --network=none "${butane_image}" --strict --pretty < "${bu}")"
+        if [ -n "{{CHECK}}" ]; then
+            [ "${out}" = "$(cat "${ign}")" ] || { echo "ERROR: ${ign} is not the compiled ${bu}; run just homelab-templates" >&2; rc=1; }
+        else
+            printf '%s\n' "${out}" > "${ign}"
+            echo "==> ${ign}"
+        fi
+    done
+    exit "${rc}"
 
 # Build an NVIDIA driver sysext (open kernel modules; locked to one image version).
 [group('sysext')]
