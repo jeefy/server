@@ -277,6 +277,12 @@ dogfood-kubeadm:
 dogfood-homelab-cluster:
     bash scripts/dogfood-homelab-cluster.sh dist/diskless
 
+# QEMU: a diskless control plane and node from the homelab templates as
+# published (needs guest internet).
+[group('sysext')]
+dogfood-homelab-templates:
+    bash scripts/dogfood-homelab-templates.sh dist/diskless
+
 # Build the NVIDIA Container Toolkit (CDI) systemd-sysext (own version axis).
 [group('sysext')]
 build-nvidia-container-toolkit-sysext:
