@@ -150,6 +150,16 @@ workloads. Opt-in: nothing enables it, and a worker never sees its config.
   (kube-apiserver, kube-controller-manager, kube-scheduler, coredns, pause,
   etcd; kube-proxy is listed but not used), which is not solved yet.
 
+**Multi-node homelab.** With the homelab sysext and `HOMELAB_ROLE=control-plane`
+in `/etc/bluefin/homelab.conf`, `bluefin-cluster-prepare.service` runs between
+the seed and the init: it renames a `localhost` node to
+`bluefin-<machine-id[:8]>` and adds `controlPlaneEndpoint: <host>.local:6443`
+plus `apiServer.certSANs` to the `/etc` copy (unless it already sets an
+endpoint), so nodes reach the API by mDNS name. Nodes (`HOMELAB_ROLE=node`)
+join with a passphrase-authenticated bootstrap token; protocol, files and
+threat model: [`files/homelab/cluster/README.md`](../../files/homelab/cluster/README.md).
+`just dogfood-homelab-cluster` checks it in QEMU.
+
 `just dogfood-kubeadm` checks the whole path in QEMU: a diskless boot whose
 Ignition does only the above, then a test-only pinned Cilium. It needs `helm`
 on the host and internet access from the guest.

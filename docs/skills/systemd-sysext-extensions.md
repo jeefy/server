@@ -100,7 +100,11 @@ applies the enabled components in the order of the `components` index (Cilium
 only on kubeadm, metrics-server only on kubeadm because k0s ships its own),
 waiting for CRDs and rollouts in between, fills `${HOMELAB_*}` placeholders
 from `homelab.conf`, skips files whose inputs are unset, and never deletes.
-A failed run is retried by the unit.
+A failed run is retried by the unit. It also carries `bluefin-cluster` (a Go
+binary, so the image has `ARCHITECTURE=`) for multi-node homelabs
+(`HOMELAB_ROLE`), and a `20-wired.network` drop-in enabling mDNS; see
+[`files/homelab/cluster/README.md`](../../files/homelab/cluster/README.md).
+The applier does nothing on `HOMELAB_ROLE=node`.
 
 The toolkit is delivered like k0s: the sysupdate component
 `nvidia-container-toolkit` (`/usr/lib/sysupdate.nvidia-container-toolkit.d/`)
