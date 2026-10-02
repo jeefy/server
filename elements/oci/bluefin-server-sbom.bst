@@ -37,6 +37,7 @@ build-depends:
 - oci/kubeadm-sysext.bst
 - kubeadm/kubeadm-bin.bst
 - oci/homelab-sysext.bst
+- homelab/bluefin-cluster.bst
 - oci/zfs-sysext.bst
 - zfs/openzfs.bst
 - oci/nvidia-open-595-sysext.bst

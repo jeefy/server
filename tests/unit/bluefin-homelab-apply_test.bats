@@ -121,6 +121,29 @@ applied_components() {
     ! grep -q 'HOMELAB_' "${cilium}"
 }
 
+@test "HOMELAB_ROLE=node: the control plane applies, never a node" {
+    kubeadm_node
+    run_applier HOMELAB_ROLE=node
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"HOMELAB_ROLE=node"* ]]
+    ! grep -q '^kubectl' "${LOG}"
+}
+
+@test "multi-node: Cilium gets the address of the control plane's mDNS name" {
+    kubeadm_node
+    sed -i 's|https://192.0.2.10:6443|https://cp1.local:6443|' "${FAKE_ROOT}/etc/kubernetes/admin.conf"
+    cat >"${STUBS}/resolvectl" <<'EOF'
+#!/usr/bin/env bash
+[ "$*" = "query -4 --legend=no cp1.local" ] && printf 'cp1.local: 192.0.2.20                        -- link: enp0s2\n'
+EOF
+    chmod +x "${STUBS}/resolvectl"
+    run_applier HOMELAB_ROLE=control-plane
+    [ "$status" -eq 0 ]
+    cilium=$(ls "${APPLIED}"/*-10-cilium.yaml)
+    grep -q 'value: "192.0.2.20"' "${cilium}"
+    ! grep -q 'cp1.local' "${cilium}"
+}
+
 @test "k0s: no Cilium, no metrics-server, and k0s kubectl without kubectl" {
     k0s_node
     mv "${STUBS}/kubectl" "${BATS_TEST_TMPDIR}/kubectl-real"

@@ -17,7 +17,8 @@
 # ever deleted, so every run is a no-op on a converged cluster.
 #
 # Exits 1 when a component failed to apply or roll out in time (the unit
-# retries); 0 otherwise, including on nodes that are not a control plane.
+# retries); 0 otherwise, including on nodes that are not a control plane
+# (HOMELAB_ROLE=node, or no admin kubeconfig).
 set -uo pipefail
 
 MANIFESTS=${HOMELAB_MANIFESTS:-/usr/share/bluefin/homelab}
@@ -115,8 +116,23 @@ api_server_inputs() {
 	server=$(sed -n 's/^[[:space:]]*server:[[:space:]]*//p' "${KUBECONFIG_FILE}" | head -n1)
 	hostport=${server#https://}
 	hostport=${hostport%%/*}
-	: "${HOMELAB_K8S_SERVICE_HOST:=$(host_of "${hostport}")}"
+	: "${HOMELAB_K8S_SERVICE_HOST:=$(service_host "$(host_of "${hostport}")")}"
 	: "${HOMELAB_K8S_SERVICE_PORT:=$(port_of "${hostport}")}"
+}
+# A multi-node control plane's endpoint is its mDNS name (<host>.local),
+# which Cilium's agent cannot resolve before CoreDNS runs: hand it the
+# address the host resolves the name to.
+# (resolvectl prints "<name>: <address> -- link: <link>"; no awk in the image.)
+service_host() {
+	local name addr=
+	case $1 in
+	*.local)
+		read -r name addr _ < <(resolvectl query -4 --legend=no "$1" 2>/dev/null) || true
+		[[ ${addr} =~ ^[0-9.]+$ ]] || addr=
+		echo "${addr:-$1}"
+		;;
+	*) echo "$1" ;;
+	esac
 }
 host_of() {
 	case $1 in
@@ -268,6 +284,10 @@ apply_component() {
 main() {
 	local status dir default runtimes id var
 	local -a failed=()
+	if [ "${HOMELAB_ROLE:-}" = node ]; then
+		notice "HOMELAB_ROLE=node: the control plane applies the components; nothing to do"
+		return 0
+	fi
 	find_kubeconfig
 	status=$?
 	case ${status} in

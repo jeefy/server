@@ -361,7 +361,7 @@ def test_unit_is_opt_in_and_retries_without_blocking_boot() -> None:
 def test_element_stages_applier_unit_wants_and_manifests() -> None:
     text = ELEMENT.read_text()
     assert 'sysext-image: "homelab_%{image-version}"' in text
-    assert 'sysext-architecture: ""' in text
+    assert 'sysext-architecture: "%{systemd-arch}"' in text
     assert "path: files/homelab/sysext" in text and "path: files/homelab/manifests" in text
     assert "for wants in kubelet.service.wants k0scontroller.service.wants" in text
     assert '"sysext%{datadir}/bluefin/homelab"' in text

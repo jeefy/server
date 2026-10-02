@@ -1,5 +1,22 @@
-# /etc/bluefin/homelab.conf — read by bluefin-homelab-apply.service (systemd
-# EnvironmentFile syntax: KEY=value, no shell expansion).
+# /etc/bluefin/homelab.conf — read by bluefin-homelab-apply.service and
+# bluefin-cluster (systemd EnvironmentFile syntax: KEY=value, no shell
+# expansion).
+#
+# Multi-node: HOMELAB_ROLE=control-plane on one node, HOMELAB_ROLE=node on
+# the others (unset: a single-node homelab). The control plane advertises
+# itself over mDNS and generates a join passphrase at first start (console
+# and `bluefin-cluster passphrase`); a node needs only that passphrase, which
+# it deletes from this file once joined. Components are applied by the
+# control plane only.
+#HOMELAB_ROLE=control-plane
+#HOMELAB_ROLE=node
+#HOMELAB_JOIN_PASSPHRASE=four-words-from-the-console
+# Node: skip mDNS discovery and use this control plane (host[:port]).
+#HOMELAB_CONTROL_PLANE=cp1.local
+# Control plane: name shown in the mDNS advertisement (default: hostname),
+# and the join service port.
+#HOMELAB_CLUSTER_NAME=homelab
+#HOMELAB_JOIN_PORT=6447
 #
 # Components: HOMELAB_<ID>=yes|no overrides the default listed in
 # /usr/share/bluefin/homelab/components. On by default: CILIUM (kubeadm only),
