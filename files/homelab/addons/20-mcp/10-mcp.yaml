@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/instance: mcp
     app.kubernetes.io/version: 0.0.67
     app.kubernetes.io/managed-by: Helm
-automountServiceAccountToken: false
+automountServiceAccountToken: true
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -91,7 +91,7 @@ spec:
         app.kubernetes.io/managed-by: Helm
     spec:
       serviceAccountName: mcp-kubernetes-mcp-server
-      automountServiceAccountToken: false
+      automountServiceAccountToken: true
       securityContext:
         seccompProfile:
           type: RuntimeDefault

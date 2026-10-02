@@ -351,10 +351,11 @@ ADDON_COMPONENTS = [
         values={
             "image": {"registry": "quay.io", "repository": "containers/kubernetes_mcp_server", "version": "v0.0.67"},
             "ingress": {"enabled": False},
-            # The server's own account needs no access: every tool call runs
+            # The server's own account gets no grant: every tool call runs
             # with the caller's bearer token (cluster_auth_mode passthrough).
+            # Its token stays mounted: the in-cluster provider needs the
+            # service account's CA and API server address.
             "rbac": {"create": False},
-            "serviceAccount": {"automountToken": False},
             # patch_mcp replaces the rendered config.toml with MCP_CONFIG.
             "config": {"port": "8080"},
         },
