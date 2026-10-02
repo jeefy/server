@@ -15,6 +15,13 @@ setup() {
     LOG="${BATS_TEST_TMPDIR}/kubectl.log"
     APPLIED="${BATS_TEST_TMPDIR}/applied"
     mkdir -p "${STUBS}" "${FAKE_ROOT}" "${APPLIED}"
+    # Only the tools the applier uses, never the host's own kubectl or k0s
+    # (CI runners ship a real kubectl in /usr/local/bin).
+    TOOLS="${BATS_TEST_TMPDIR}/tools"
+    mkdir -p "${TOOLS}"
+    for t in awk basename bash cat chmod cp env grep head id ln mkdir mktemp mv od printf rm sed sleep sort tail timeout touch tr; do
+        p=$(command -v "$t") && ln -sf "$p" "${TOOLS}/$t"
+    done
     : >"${LOG}"
 
     cat >"${STUBS}/kubectl" <<EOF
@@ -63,7 +70,7 @@ k0s_node() {
 }
 
 run_applier() {
-    run env -i PATH="${STUBS}:/usr/local/bin:/usr/bin:/bin" HOMELAB_ROOT="${FAKE_ROOT}" \
+    run env -i PATH="${STUBS}:${TOOLS}" HOMELAB_ROOT="${FAKE_ROOT}" \
         HOMELAB_MANIFESTS="${MANIFESTS:-${REPO_ROOT}/files/homelab/manifests}" \
         HOMELAB_API_TIMEOUT=1 HOMELAB_WAIT_TIMEOUT=1 HOMELAB_POLL_INTERVAL=0 "$@" \
         bash "${SCRIPT}"
