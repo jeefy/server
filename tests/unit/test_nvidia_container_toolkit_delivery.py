@@ -80,10 +80,17 @@ def test_activation_merges_through_run_extensions_after_a_soft_fetch() -> None:
     install = ["/usr/bin/install", "-D", "-m", "0644", IMAGE, "/run/extensions/nvidia-container-toolkit.raw"]
     refresh = ["/usr/bin/systemd-sysext", "refresh"]
     reload = ["/usr/bin/systemctl", "daemon-reload"]
+    containerd = ["/usr/bin/systemctl", "try-restart", "containerd.service"]
     units = ["/usr/bin/systemctl", "start", "--no-block", "nvidia-cdi-refresh.path", "nvidia-cdi-refresh.service"]
-    assert start == [install, refresh, reload, units], (
-        "copy, merge, reload, then start the sysext's units by name: the merge "
-        "comes after PID 1 built the boot transaction"
+    assert start == [install, refresh, reload, containerd, units], (
+        "copy, merge, reload, restart an already-running containerd so it "
+        "re-reads its imports glob and sees the nvidia handler, then start the "
+        "sysext's units by name: the merge comes after PID 1 built the boot "
+        "transaction"
+    )
+    assert [line for line in unit.values("Service", "ExecStart") if "try-restart" in line][0].startswith("-"), (
+        "containerd.service ships in the kubeadm sysext only; a node without it "
+        "must not fail activation"
     )
     assert "multi-user.target" not in [w for argv in start for w in argv], (
         "re-requesting multi-user.target pulls this unit and "

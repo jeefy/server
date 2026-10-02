@@ -241,6 +241,23 @@ the toolkit has no `nvidia` handler; a node with it serves
 `RuntimeClass nvidia`. k0s's containerd reads `/etc/k0s/containerd.d/`
 instead and is not wired up here.
 
+containerd resolves `imports` once, at config load. A diskless node merges
+the toolkit before containerd starts, but an installed node merges it later
+(the activate unit waits for the network fetch) while containerd is already
+up, so the glob would match nothing. `nvidia-container-toolkit-activate`
+therefore runs `systemctl try-restart containerd.service` after the refresh;
+containers survive it (`KillMode=process`). A node that rewrites
+`/etc/containerd/config.toml` afterwards still restarts containerd itself.
+
+`nvidia-container-runtime.cdi` honours `NVIDIA_VISIBLE_DEVICES` even for
+unprivileged containers (upstream defaults
+`accept-nvidia-visible-devices-envvar-when-unprivileged = true`), so with a
+cluster-wide `RuntimeClass nvidia` any pod asking for that class and
+`NVIDIA_VISIBLE_DEVICES=all` claims every GPU, bypassing device-plugin
+accounting. The operands rely on it, so nothing here changes it; a cluster
+can tighten it in `/etc/nvidia-container-runtime/config.toml` (plus policy on
+the RuntimeClass) at the cost of operands that ask for devices by env var.
+
 ### GPU Operator
 
 The driver and the CDI spec come from the sysexts, so the GPU Operator chart
