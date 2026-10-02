@@ -1,15 +1,16 @@
 kind: manual
 description: |
-  Opt-in homelab add-on systemd-sysext: the KubeStellar Console (deployed
-  once its GitHub OAuth app is configured, behind the homelab Gateway) and,
-  with HOMELAB_KUBESTELLAR_FULL=yes, full KubeStellar (KubeFlex, its
-  Postgres, the KubeStellar controllers' PostCreateHooks), under
-  /usr/share/bluefin/homelab/addons.d/. Needs the homelab sysext, whose
-  applier applies it on the control plane of a kubeadm or k0s cluster.
+  Opt-in homelab add-on systemd-sysext: Argo Workflows (controller and
+  server, namespace-scoped in "argo", server --auth-mode=client), its
+  HTTPRoute on the homelab Gateway, as plain YAML rendered offline by
+  scripts/render-homelab-manifests.py (images pinned by digest) under
+  /usr/share/bluefin/homelab/addons.d/10-argo-workflows/. Needs the homelab
+  sysext: bluefin-homelab-apply applies it after the base components on the
+  control plane.
 
-  Output: kubestellar_<image-version>.raw, .raw.zst, and SHA256SUMS. Locked to
+  Output: argo-workflows_<image-version>.raw, .raw.zst, and SHA256SUMS. Locked to
   one image version like the homelab sysext and updated in lock-step with
-  the OS through the `kubestellar` sysupdate feature.
+  the OS through the `argo-workflows` sysupdate feature.
 
 (@):
 - include/image.yml
@@ -25,17 +26,14 @@ sources:
   path: files/homelab/addon-sysexts
   directory: sysext-src
 - kind: local
-  path: files/homelab/addons/30-kubestellar-console
-  directory: addons-src/30-kubestellar-console
-- kind: local
-  path: files/homelab/addons/31-kubestellar-full
-  directory: addons-src/31-kubestellar-full
+  path: files/homelab/addons/10-argo-workflows
+  directory: addons-src/10-argo-workflows
 
 variables:
   strip-binaries: ""
-  sysext-name: "kubestellar"
-  sysext-image: "kubestellar_%{image-version}"
-  sysext-release: "kubestellar_%{image-version}"
+  sysext-name: "argo-workflows"
+  sysext-image: "argo-workflows_%{image-version}"
+  sysext-release: "argo-workflows_%{image-version}"
   sysext-version: "%{image-version}"
   # Manifests only.
   sysext-architecture: ""
