@@ -53,10 +53,19 @@ def test_the_stick_keeps_its_partitions():
 
 def test_the_new_install_keeps_its_partitions():
     # repart and sysinstall add the target's new partition devices while
-    # sysinstall runs; its RuntimeDirectory= marks that.
-    runtime = SystemdFile(DROPIN).value("Service", "RuntimeDirectory")
+    # sysinstall runs; a marker in its RuntimeDirectory= marks that. The
+    # marker is touched only after udev settled, so every old partition's add
+    # event ran the rule first (RuntimeDirectory= itself exists before
+    # ExecStartPre=).
+    unit = SystemdFile(DROPIN)
+    runtime = unit.value("Service", "RuntimeDirectory")
     assert runtime == "bluefin-sysinstall"
-    assert f'TEST=="/run/{runtime}", GOTO="bluefin_installer_end"' in rules()
+    marker = f"/run/{runtime}/started"
+    assert unit.commands("ExecStartPre") == [
+        ["/usr/bin/udevadm", "settle"],
+        ["/usr/bin/touch", marker],
+    ]
+    assert f'TEST=="{marker}", GOTO="bluefin_installer_end"' in rules()
     # Every guard comes before the action.
     lines = rules()
     run = next(i for i, line in enumerate(lines) if line.startswith("RUN"))

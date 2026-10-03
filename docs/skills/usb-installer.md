@@ -40,8 +40,9 @@ initrd masks `systemd-networkd-wait-online`, as the disk UKI already does.
 `90-bluefin-installer-forget-partitions.rules` (udev, only when the kernel
 command line has `systemd.unit=system-install.target`) runs
 `partx --delete` on every partition device except the stick's
-(`bluefin-installer*`) until sysinstall starts (its
-`RuntimeDirectory=bluefin-sysinstall` exists). Nothing on any disk changes;
+(`bluefin-installer*`) until sysinstall starts: its drop-in runs
+`udevadm settle`, then touches `/run/bluefin-sysinstall/started`, which the
+rule skips on. Nothing on any disk changes;
 the kernel just forgets the partitions until the next boot. systemd-repart
 v261 needs that to erase a disk that is not empty: it keeps the kernel's
 partition devices of what the disk held, and adding the new ESP's partition

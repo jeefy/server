@@ -19,7 +19,8 @@
 #
 # The kernel still has partition devices for a disk that is not empty when
 # systemd-repart erases it; stock v261 then fails with "Device or resource
-# busy" after wiping the disk (#359; patches/freedesktop-sdk/0007).
+# busy" after wiping the disk (#359); the image's
+# 90-bluefin-installer-forget-partitions.rules udev rule works around it.
 #
 # systemd-sysinstall is interactive on /dev/console. The test makes it
 # unattended with a systemd.unit-dropin.systemd-sysinstall.service SMBIOS
