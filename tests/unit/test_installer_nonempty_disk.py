@@ -4,12 +4,15 @@ systemd-repart v261 erases the disk for sysinstall's --erase=yes but keeps the
 kernel's partition devices of what the disk held, so adding the new ESP's
 partition device (BLKPG) and rereading the new partition table failed with
 EBUSY on any disk with partitions. The USB installer forgets those partition
-devices (udev rule) before sysinstall starts.
+devices (udev rule) before sysinstall starts; scripts/dogfood-installer.sh
+replays the install onto such disks in QEMU (DOGFOOD_TARGET).
 """
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 from _systemd import SystemdFile
@@ -20,6 +23,8 @@ ELEMENT = ROOT / "elements" / "bluefin-server" / "os-udev-rules.bst"
 OS_STACK = ROOT / "elements" / "bluefin-server" / "os-stack.bst"
 DROPIN = ROOT / "files" / "os" / "systemd" / "system" / "systemd-sysinstall.service.d" / "10-bluefin-installer.conf"
 BOOT_ELEMENT = ROOT / "elements" / "oci" / "bluefin-server-boot.bst"
+DOGFOOD = ROOT / "scripts" / "dogfood-installer.sh"
+JUSTFILE = ROOT / "Justfile"
 
 
 def rules() -> list[str]:
@@ -68,3 +73,41 @@ def test_the_rule_ships_in_the_os_image():
     assert "path: files/os/udev/rules.d" in element
     assert "target: /usr/lib/udev/rules.d" in element
     assert "- bluefin-server/os-udev-rules.bst" in OS_STACK.read_text(encoding="utf-8")
+
+
+def run_dogfood(tmp_path: Path, **env: str) -> subprocess.CompletedProcess:
+    image = tmp_path / "img"
+    image.mkdir(exist_ok=True)
+    return subprocess.run(
+        ["bash", str(DOGFOOD), str(image)],
+        env={**os.environ, "DOGFOOD_STATE": str(tmp_path / "state"), **env},
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_an_unknown_target_kind_is_refused_before_anything_boots(tmp_path: Path):
+    result = run_dogfood(tmp_path, DOGFOOD_TARGET="bogus")
+    assert result.returncode != 0
+    assert "DOGFOOD_TARGET must be" in result.stderr
+    assert not (tmp_path / "state").exists()
+
+
+def test_every_target_kind_is_accepted(tmp_path: Path):
+    # Past the kind check the script stops at the missing installer image.
+    for kind in ("blank", "foreign-gpt", "ext4", "xfs", "prior-install"):
+        result = run_dogfood(tmp_path, DOGFOOD_TARGET=kind)
+        assert result.returncode != 0
+        assert "no bluefin-server-installer_<ver>.raw" in result.stderr, (kind, result.stderr)
+
+
+def test_the_install_must_leave_only_the_esp_and_usr_slot_a():
+    # Leftover partitions from what the disk held before would make first-boot
+    # by-partlabel lookups ambiguous.
+    assert "installed-slot-b=0 installed-parts=3" in DOGFOOD.read_text(encoding="utf-8")
+
+
+def test_the_non_empty_disk_variants_have_just_targets():
+    text = JUSTFILE.read_text(encoding="utf-8")
+    assert "dogfood-installer TARGET=" in text
+    assert "DOGFOOD_TARGET={{TARGET}}" in text
