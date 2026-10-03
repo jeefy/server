@@ -188,9 +188,15 @@ uploaded to a GitHub Release tagged `v<image-version>` (`YY.MM.<run>` on main).
       `main` runs it instead.
     - `scripts/dogfood-installer.sh`: the offline USB installer installs
       unattended onto a blank disk, which then boots with and without the
-      installer attached, and installs again over that install
-      (`DOGFOOD_TARGET=prior-install`); a second run installs over another
-      OS's GPT disk (`DOGFOOD_TARGET=foreign-gpt`; #359).
+      installer attached. Outside releases it then gets `1.<run>.1`
+      (`dist/diskless-next`) the way a PC installed from the stick does:
+      an unreachable and a foreign-signed source must fail
+      `systemd-sysupdate.service` and show on the login banner, the update
+      must stage, boot and be blessed (see "Update health on the node" in
+      [systemd-sysupdate-verification.md](systemd-sysupdate-verification.md)).
+      Two more runs install onto disks that are not empty (#359): again over
+      a Bluefin install (`DOGFOOD_TARGET=prior-install`) and over another
+      OS's GPT disk (`DOGFOOD_TARGET=foreign-gpt`).
  5. **Version Derivation:** The release version is set per build with
     `just set-version`: `YY.MM.<run>` for releases, `0.<run>` for every other
     build so it can never sort above a release.

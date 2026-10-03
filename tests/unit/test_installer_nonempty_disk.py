@@ -116,7 +116,24 @@ def test_the_install_must_leave_only_the_esp_and_usr_slot_a():
     assert "installed-slot-b=0 installed-parts=3" in DOGFOOD.read_text(encoding="utf-8")
 
 
-def test_the_non_empty_disk_variants_have_just_targets():
+def test_the_non_empty_disk_variants_are_documented_on_the_just_recipe():
     text = JUSTFILE.read_text(encoding="utf-8")
-    assert "dogfood-installer TARGET=" in text
-    assert "DOGFOOD_TARGET={{TARGET}}" in text
+    recipe = text[: text.index("dogfood-installer NEXT=")]
+    assert "DOGFOOD_TARGET=foreign-gpt|ext4|xfs|prior-install" in recipe.rsplit("\n\n", 1)[-1]
+
+
+def test_prior_install_does_not_combine_with_an_update(tmp_path: Path):
+    # Steps 5-6 are the reinstall or the update, not both.
+    next_dir = tmp_path / "next"
+    next_dir.mkdir()
+    (next_dir / "bluefin-server-1.2.efi").touch()
+    image = tmp_path / "img"
+    image.mkdir()
+    result = subprocess.run(
+        ["bash", str(DOGFOOD), str(image), str(next_dir)],
+        env={**os.environ, "DOGFOOD_STATE": str(tmp_path / "state"), "DOGFOOD_TARGET": "prior-install"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "does not combine with <next>" in result.stderr
