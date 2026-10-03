@@ -4,7 +4,7 @@ description: The offline USB installer bluefin-server-installer_<ver>.raw. Load 
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-01"
+  last_updated: "2026-10-03"
   context7-sources:
     - /systemd/systemd
 ---
@@ -36,6 +36,18 @@ existing Bluefin install (including the disk being overwritten) is never
 opened as the installer's /usr, and an installed node booted with the stick
 still plugged in never opens the stick's usr. The installer is offline: its
 initrd masks `systemd-networkd-wait-online`, as the disk UKI already does.
+
+`90-bluefin-installer-forget-partitions.rules` (udev, only when the kernel
+command line has `systemd.unit=system-install.target`) runs
+`partx --delete` on every partition device except the stick's
+(`bluefin-installer*`) until sysinstall starts (its
+`RuntimeDirectory=bluefin-sysinstall` exists). Nothing on any disk changes;
+the kernel just forgets the partitions until the next boot. systemd-repart
+v261 needs that to erase a disk that is not empty: it keeps the kernel's
+partition devices of what the disk held, and adding the new ESP's partition
+device, or rereading the new table, fails with `Device or resource busy` after
+the disk was already wiped (#359). Drop the rule once FSDK's systemd-repart
+removes them itself.
 
 `run-bluefin-installer.mount` mounts the stick's ESP (`bluefin-installer`) at
 `/run/bluefin/installer` (with `fmask=0133,dmask=0022`, so systemd-repart does
@@ -74,7 +86,8 @@ installer UI of its own, apart from the Homelab entries' one prompt
      without clearing appends it to the prefix and is rejected as
      `Invalid input …`.
    Upstream v261 has no arrow-key menu; the number is the selector.
-3. **Summary.** The chosen disk is always erased (`--erase=yes`), and the
+3. **Summary.** The chosen disk is always erased (`--erase=yes`), whatever
+   it holds (an earlier install, another OS), and the
    install is registered in the firmware boot menu (`--variables=yes`). Type
    `yes` to begin. This is the only confirmation.
 4. sysinstall installs, and the machine **reboots by itself** when it

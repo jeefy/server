@@ -4,7 +4,7 @@ description: Use when building or debugging the Bluefin Server boot chain, the d
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-30"
+  last_updated: "2026-10-03"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -134,6 +134,12 @@ UUIDs pinned to the usrhash derivation by `bluefin-server-boot.bst`.
 first boot of the installed disk runs the initrd's `systemd-repart` (reading
 `/sysusr/usr/lib/repart.d`) to create slot B and the persistent root. The
 installed disk is identical whichever path installed it. No shell installer.
+
+Erasing a disk that is not empty needs the kernel to forget that disk's
+partition devices first (systemd-repart v261, #359; why in
+[usb-installer.md](usb-installer.md)). The USB installer does that itself. On
+a diskless node, give `systemd-sysinstall` an empty disk, or run
+`partx --delete /dev/sdX` on the target first (nothing on the disk changes).
 
 ### From the USB installer (offline)
 
