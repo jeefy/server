@@ -426,7 +426,8 @@ def test_each_addon_is_a_version_locked_opt_in_sysext(name: str) -> None:
 
 def test_homelab_conf_documents_the_addon_keys() -> None:
     example = EXAMPLE.read_text()
-    for key in ("DOMAIN", "ARGO_WORKFLOWS", "MCP_READ_WRITE", "KUBESTELLAR_FULL"):
+    for key in ("DOMAIN", "ARGO_WORKFLOWS", "MCP_READ_WRITE", "KUBESTELLAR_FULL",
+                "KUBESTELLAR_CONSOLE_ALLOWED_LOGINS", "KUBESTELLAR_CONSOLE_ADMIN_LOGINS"):
         assert f"#HOMELAB_{key}=" in example, key
     assert "/etc/bluefin/homelab.d/kubestellar-console/github-client-id" in example
     assert "/etc/bluefin/homelab.d/kubestellar-console/github-client-secret" in example
