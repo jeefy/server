@@ -372,7 +372,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 libarchive-tools
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 libarchive-tools \
+            fdisk dosfstools e2fsprogs
           sudo chmod 666 /dev/kvm
           curl -fsSL --retry 3 -o "${RUNNER_TEMP}/edk2-ovmf.rpm" "${OVMF_RPM_URL}"
           echo "${OVMF_RPM_SHA256}  ${RUNNER_TEMP}/edk2-ovmf.rpm" | sha256sum -c -
@@ -425,7 +426,18 @@ jobs:
           DOGFOOD_SYSEXT: zfs,nvidia
         run: bash scripts/dogfood-install.sh dist/diskless dist/diskless-next dist/diskless-broken
 
-      - name: Install from the offline USB installer and boot it
+      # prior-install: the blank-disk install and boots, then a reinstall over
+      # that install and a boot of it (#359). foreign-gpt: another OS's GPT
+      # disk (ESP, ext4, swap). Each adds about a minute.
+      - name: Install from the offline USB installer, boot it, reinstall over it
+        env:
+          DOGFOOD_TARGET: prior-install
+        run: bash scripts/dogfood-installer.sh dist/diskless
+
+      - name: Install from the offline USB installer over another OS's disk
+        env:
+          DOGFOOD_TARGET: foreign-gpt
+          DOGFOOD_STATE: dist/dogfood-installer-foreign-gpt
         run: bash scripts/dogfood-installer.sh dist/diskless
 
       - name: Upload boot logs
@@ -437,6 +449,7 @@ jobs:
             dist/*/dogfood-*.log
             dist/dogfood-install/*.log
             dist/dogfood-installer/*.log
+            dist/dogfood-installer-*/*.log
           if-no-files-found: ignore
           retention-days: 7
 
