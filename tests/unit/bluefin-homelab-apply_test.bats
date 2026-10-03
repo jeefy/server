@@ -19,7 +19,7 @@ setup() {
     # (CI runners ship a real kubectl in /usr/local/bin).
     TOOLS="${BATS_TEST_TMPDIR}/tools"
     mkdir -p "${TOOLS}"
-    for t in awk basename bash cat chmod cp env grep head id ln mkdir mktemp mv od printf rm sed sleep sort tail timeout touch tr; do
+    for t in awk base64 basename bash cat chmod cp env grep head id ln mkdir mktemp mv od printf rm sed sha1sum sleep sort tail timeout touch tr; do
         p=$(command -v "$t") && ln -sf "$p" "${TOOLS}/$t"
     done
     : >"${LOG}"
@@ -40,6 +40,7 @@ case \${args} in
     c=\$(cat "${BATS_TEST_TMPDIR}/waits" 2>/dev/null || echo 0)
     echo \$((c + 1)) >"${BATS_TEST_TMPDIR}/waits"
     [ "\${c}" -ge "\${WAIT_FAILS:-0}" ]; exit \$? ;;
+*" get secret "*"jsonpath={.data.password}"*) printf %s "\${LOGIN_PASSWORD:-}" | base64; exit 0 ;;
 *" get secret "*) exit \${SECRET_RC:-1} ;;
 *" create secret "*) printf 'kind: Secret\n' ; exit 0 ;;
 *" get -f "*)
