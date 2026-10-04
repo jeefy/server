@@ -115,7 +115,12 @@ kubectl -n cert-manager get secret homelab-ca -o jsonpath='{.data.ca\.crt}' | ba
 ```
 
 MCP clients and the `argo` CLI need it too (Go tools read `SSL_CERT_FILE`,
-Node.js ones `NODE_EXTRA_CA_CERTS`). The Gateway does not use the `acme` ClusterIssuer:
+Node.js ones `NODE_EXTRA_CA_CERTS`). Trust the CA before the first visit:
+the add-on routes send `Strict-Transport-Security: max-age=31536000`
+(deliberately without `includeSubDomains`, which would pin every device
+under the domain), and once a browser has that header it turns a
+certificate warning for these names into a hard error with no
+click-through. The Gateway does not use the `acme` ClusterIssuer:
 HTTP-01 needs every name reachable from the internet, which a LAN domain
 such as `home.arpa` never is, and a certificate that cannot be issued would
 leave the add-ons unreachable. `HOMELAB_CERT_MANAGER=no` does the same:
