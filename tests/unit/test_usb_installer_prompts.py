@@ -91,6 +91,7 @@ PROMPT_UNIT = (
     ROOT / "files" / "os" / "creds" / "systemd" / "system" / "bluefin-root-password-prompt.service"
 )
 PRESETS = ROOT / "files" / "os" / "systemd" / "system-preset"
+PROMPT_HELPER = ROOT / "files" / "os" / "libexec" / "bluefin-root-password-prompt"
 
 
 def test_the_installed_disk_asks_for_a_root_password_on_first_boot():
@@ -102,8 +103,12 @@ def test_the_installed_disk_asks_for_a_root_password_on_first_boot():
     unit = SystemdFile(PROMPT_UNIT)
     assert unit.value("Unit", "ConditionCredential") == name
     assert unit.value("Unit", "ConditionFirstBoot") == "yes"
-    [argv] = unit.commands()
-    assert argv[0] == "systemd-firstboot" and "--prompt-root-password" in argv
+    # Stock systemd-firstboot asks, through a helper that asks again while
+    # root has no password (bluefin-root-password-prompt_test.bats).
+    assert unit.commands() == [["/usr/libexec/bluefin-root-password-prompt"]]
+    helper = PROMPT_HELPER.read_text(encoding="utf-8")
+    assert 'firstboot="${BLUEFIN_FIRSTBOOT:-systemd-firstboot}"' in helper
+    assert "--prompt-root-password" in helper
     assert preset("bluefin-root-password-prompt.service", PRESETS.glob("*.preset")) == "enable"
 
 
