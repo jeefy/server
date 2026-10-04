@@ -40,6 +40,11 @@ description: |
   systemd-firstboot --prompt-root-password, asked again until root has a
   password.
 
+  /usr/libexec/bluefin-root-password-prompt runs on the first boot of a disk
+  the USB installer wrote (bluefin-root-password-prompt.service): stock
+  systemd-firstboot --prompt-root-password, asked again until root has a
+  password.
+
 build-depends:
   - base/base-stack.bst
 
@@ -75,5 +80,9 @@ config:
         "%{install-root}/usr/libexec/bluefin-homelab-install"
       install -Dm0755 libexec-src/bluefin-installer-secure-boot \
         "%{install-root}/usr/libexec/bluefin-installer-secure-boot"
+      install -Dm0755 libexec-src/bluefin-installer-done \
+        "%{install-root}/usr/libexec/bluefin-installer-done"
+      install -Dm0755 libexec-src/bluefin-root-password-prompt \
+        "%{install-root}/usr/libexec/bluefin-root-password-prompt"
       install -Dm0755 libexec-src/bluefin-root-password-prompt \
         "%{install-root}/usr/libexec/bluefin-root-password-prompt"
