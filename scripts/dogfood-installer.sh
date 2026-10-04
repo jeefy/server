@@ -445,6 +445,8 @@ check_disk_boot() {
     grep -aq "PROBE os=bluefin-server ${v}" "${log}" || fail "$1: not running ${v}"
     grep -aq "PROBE boots=$2" "${log}" || fail "$1: expected boot $2 of the persistent root"
     grep -aq "PROBE root=xfs@${target_serial}" "${log}" || fail "$1: / is not the target's xfs root"
+    [ "${secure_boot}" != enforcing ] || grep -aq 'PROBE secureboot=enabled (user)' "${log}" \
+        || fail "$1: Secure Boot is not enforcing: $(grep -ao 'PROBE secureboot=.*' "${log}")"
     grep -aq "PROBE slot-b=$4" "${log}" || fail "$1: expected $4 empty slot-B partitions"
     [ "$(grep -ac 'PROBE usr-backing=' "${log}")" -ge 2 ] || fail "$1: no dm-verity backing for /usr"
     while read -r b; do
