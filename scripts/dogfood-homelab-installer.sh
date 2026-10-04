@@ -128,7 +128,7 @@ finish() {
 # $BLUEFIN_INSTALL_ARGS) plus --confirm=no and the target disk.
 exec_start="$(sed -n 's/^ExecStart=\(..*\)$/\1/p' "${dropin_src}" | tail -n1)"
 # shellcheck disable=SC2016 # the literal word systemd expands
-[[ "${exec_start}" == *' $BLUEFIN_INSTALL_ARGS' ]] || fail "the image drop-in does not append \$BLUEFIN_INSTALL_ARGS"
+[[ " ${exec_start} " == *' $BLUEFIN_INSTALL_ARGS '* ]] || fail "the image drop-in does not append \$BLUEFIN_INSTALL_ARGS"
 cat > "${state}/sysinstall.conf" <<EOF
 [Unit]
 Wants=dogfood-journal.service
