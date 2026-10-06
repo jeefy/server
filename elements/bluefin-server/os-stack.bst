@@ -32,8 +32,9 @@ depends:
 
 
 
-  # Wired DHCP configuration for the installed OS
+  # Wired DHCP configuration for the installed OS, with mDNS on
   - bluefin-server/os-networkd.bst
+  - bluefin-server/os-resolved.bst
 
   # /etc/resolv.conf symlink to systemd-resolved (tmpfiles.d)
   - bluefin-server/os-resolv-conf.bst
@@ -56,6 +57,9 @@ depends:
 
   # Console issue banner (the KubeStellar sysext adds its dashboard URL)
   - bluefin-server/os-issue.bst
+
+  # Interactive bash prompt (user@host:cwd$, blue @)
+  - bluefin-server/os-prompt.bst
 
   # udev rules (USB installer: other disks' stale partition devices, #359)
   - bluefin-server/os-udev-rules.bst
