@@ -1,0 +1,18 @@
+# Pruned from the initrd only, after common.list. The initrd needs gpg/gpgv
+# (plus gpg-agent and keyboxd) to verify SHA256SUMS.gpg; nothing else here
+# runs outside an interactive emergency shell.
+
+# SQLite CLI (gpg keeps libsqlite3).
+usr/bin/sqlite3
+
+# GnuPG tools beyond signature verification.
+usr/bin/gpgsm
+usr/bin/gpg-wks-client
+usr/bin/gpg-wks-server
+usr/bin/gpgtar
+usr/bin/gpg-card
+usr/bin/gpg-mail-tube
+usr/bin/gpgsplit
+usr/bin/gpgparsemail
+usr/libexec/gpg-wks-client
+usr/libexec/scdaemon

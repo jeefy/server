@@ -4,6 +4,8 @@ default:
     @just --list
 
 # Same bst2 container image FSDK/dakota CI uses -- pinned by commit-named tag.
+# Tooling for `just check-image` (erofs-utils, binutils, cpio, zstd, python3).
+export check_image_base := env("CHECK_IMAGE_BASE", "registry.fedoraproject.org/fedora:44")
 export oras_image := env("ORAS_IMAGE", "ghcr.io/oras-project/oras:v1.3.4")
 export bst2_image := env("BST2_IMAGE", "registry.gitlab.com/freedesktop-sdk/infrastructure/freedesktop-sdk-docker-images/bst2:1775c49af80653f9cd86cbc92761eae4ab95204e")
 # bats for `just test-unit` when none is installed -- pinned by digest.
@@ -128,6 +130,17 @@ export-image OUT="dist/diskless": build-image
     rm -rf {{OUT}}
     just bst artifact checkout oci/bluefin-server-image.bst --directory /src/{{OUT}}
     @echo "==> wrote image artifacts:" && ls -lh {{OUT}}/
+
+# Check an exported image set for broken library and program references
+# (.github/scripts/check-image.py); BASELINE is an older *.usr.raw to diff.
+[group('diskless')]
+check-image DIR="dist/diskless" BASELINE="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    args=(/src/{{DIR}})
+    [ -n "{{BASELINE}}" ] && args+=(--baseline-usr "/src/{{BASELINE}}")
+    podman run --rm --security-opt label=disable -v "{{justfile_directory()}}:/src:ro" -w /src \
+        {{check_image_base}} sh -c 'dnf -yq install erofs-utils binutils cpio zstd python3 >/dev/null 2>&1 && python3 .github/scripts/check-image.py "$@"' -- "${args[@]}"
 
 # Set the image version in include/image.yml; it must increase under
 # strverscmp() (CI uses YY.MM.<run number>).

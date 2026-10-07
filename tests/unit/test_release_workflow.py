@@ -135,7 +135,8 @@ def test_boot_test_uploads_every_harness_log_directory() -> None:
 
 def test_release_publishes_only_a_built_and_boot_tested_set() -> None:
     # Explicit results instead of !failure(): a failed kernel-cache must not
-    # block the release, and a skipped or failed build or boot-test must.
+    # block the release, and a skipped or failed build, boot-test or
+    # image-check must.
     cond = RELEASE["if"]
     assert "!failure()" not in cond
     for part in (
@@ -143,9 +144,10 @@ def test_release_publishes_only_a_built_and_boot_tested_set() -> None:
         "needs.changes.outputs.release == 'true'",
         "needs.build.result == 'success'",
         "needs.boot-test.result == 'success'",
+        "needs.image-check.result == 'success'",
     ):
         assert part in cond
-    assert RELEASE["needs"] == ["changes", "build", "boot-test"]
+    assert RELEASE["needs"] == ["changes", "build", "boot-test", "image-check"]
 
 
 @pytest.mark.parametrize("seeder", ["kernel-cache", "kernel-cache-dev"])

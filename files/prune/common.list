@@ -1,0 +1,39 @@
+# Pruned from both the /usr image and the initrd (files/prune/prune.sh).
+# Only paths that nothing in the image, the initrd, or a shipped sysext links,
+# dlopen()s, or executes from a unit or udev rule. `just check-image` enforces
+# that for every build; see docs/skills/ddi-installer-build.md.
+
+# ICU (~40 MB): its only consumer is xfs_scrub, which ships no units.
+usr/lib/*-linux-gnu/libicu*.so*
+usr/share/icu
+usr/bin/derb
+usr/bin/escapesrc
+usr/bin/genbrk
+usr/bin/genccode
+usr/bin/gencfu
+usr/bin/gencmn
+usr/bin/gencnval
+usr/bin/gendict
+usr/bin/gennorm2
+usr/bin/genrb
+usr/bin/gensprep
+usr/bin/icuexportdata
+usr/bin/icuinfo
+usr/bin/icupkg
+usr/bin/makeconv
+usr/bin/pkgdata
+usr/bin/uconv
+usr/bin/xfs_scrub
+usr/bin/xfs_scrub_all
+usr/share/xfsprogs/xfs_scrub_all.cron
+
+# GCC runtimes no binary links: Fortran, Objective-C, transactional memory,
+# and the sanitizer runtimes.
+usr/lib/*-linux-gnu/libgfortran.so*
+usr/lib/*-linux-gnu/libobjc.so*
+usr/lib/*-linux-gnu/libitm.so*
+usr/lib/*-linux-gnu/libasan.so*
+usr/lib/*-linux-gnu/libhwasan.so*
+usr/lib/*-linux-gnu/liblsan.so*
+usr/lib/*-linux-gnu/libtsan.so*
+usr/lib/*-linux-gnu/libubsan.so*

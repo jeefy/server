@@ -29,6 +29,9 @@ build-depends:
 - freedesktop-sdk.bst:components/sed.bst
 - freedesktop-sdk.bst:components/systemd.bst
 - bluefin-server/os-initial-scripts.bst
+- filename: bluefin-server/prune-lists.bst
+  config:
+    location: /prune
 - filename: bluefin-server/os-filesystem.bst
   config:
     location: /sysroot
@@ -81,6 +84,10 @@ config:
     printf 'LANG=C.UTF-8\n' > /sysroot/etc/locale.conf
     ln -sf ../usr/share/zoneinfo/UTC /sysroot/etc/localtime
     rm -f /sysroot/etc/machine-id
+
+  - |
+    set -eu
+    sh /prune/prune.sh /sysroot /prune/common.list /prune/usr.list
 
   - |
     set -eu
