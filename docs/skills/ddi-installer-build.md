@@ -4,7 +4,7 @@ description: Build, export, and dogfood the Bluefin Server image set (OS DDI, si
 metadata:
   type: how-to
   status: stable
-  last_updated: "2026-10-04"
+  last_updated: "2026-10-07"
   context7-sources:
     - /systemd/systemd
     - /apache/buildstream
@@ -35,6 +35,7 @@ just build-nvidia-sysext  # build oci/<flavour>-sysext.bst (nvidia-open-595)
 just export-nvidia-sysext # export NVIDIA sysext + SHA256SUMS to dist/sysext/
 just dogfood-nvidia       # QEMU disk install + merge/probe dist/diskless/'s NVIDIA sysext
 just version / just tags  # FSDK-derived point release and tag set
+just check-image [DIR] [BASELINE]  # broken-reference check of an exported set
 ```
 
 `just export-image` writes one directory per image version containing the OS
@@ -209,6 +210,36 @@ installing `0.674` an update to `0.674.1` still boots `0.674`; use `1.674.1`.
 Release versions (`YY.MM.<run>`) sort above it. Which of these scenarios CI runs is listed in
 [ci-tooling.md](ci-tooling.md) (the `boot-test` job).
 
+## Pruning and the image check
+
+`/usr` and the initrd are composed from whole FSDK components, so they carry
+files nothing on a server node uses. Two mechanisms remove them:
+
+- `bluefin-server/os-filesystem.bst` excludes the `locale` split domain
+  (message catalogs and locale sources). Only `C.UTF-8` and `en_US.UTF-8` are
+  compiled into `/usr/lib/locale`, so other catalogs could never load.
+- `files/prune/` holds reviewed glob lists, applied by `files/prune/prune.sh`:
+  `common.list` to both trees, then `usr.list` in `oci/bluefin-server-usr.bst`
+  or `initrd.list` in `oci/bluefin-server-boot.bst`. Each entry states why
+  nothing uses it. A pattern that matches nothing fails the build, so the
+  lists cannot go stale after an FSDK bump. The initrd also keeps only the
+  terminfo entries named in `initrd-terminfo` in `bluefin-server-boot.bst`.
+
+`just check-image [DIR] [BASELINE]` (`.github/scripts/check-image.py`)
+extracts the `/usr` image, the disk UKI's initrd, and every sysext, and fails
+when any ELF `DT_NEEDED` library, any `required` `.note.dlopen` library, or
+any program named by a unit `Exec*=` line or a udev
+`RUN`/`PROGRAM`/`IMPORT{program}` is missing. Sysexts resolve over `/usr`.
+`-`-prefixed commands and programs guarded by a `ConditionPathExists=` are
+skipped. With `BASELINE` (an older `*.usr.raw`) it also lists the `/usr`
+paths added and removed. Pre-existing FSDK gaps are waived in `KNOWN_BROKEN`
+in the script; that set is shrink-only (an entry that no longer matches fails
+the check). CI runs it as the `image-check` job against the latest release.
+
+Only prune what the check can prove unused, or what nothing outside an
+interactive shell runs. Kernel modules, hwdb, keymaps and tools users run
+directly are product decisions, not prune-list entries.
+
 ## Local builds with a remote cache
 
 If you must build locally with the cluster cache, point BuildStream at your
@@ -252,12 +283,14 @@ nodes may already trust.
   `oci/bluefin-server-image.bst`.
 - Keys committed anywhere outside the gitignored `files/boot-keys/`, other
   than the public INSECURE dev module pair in `files/dev-keys/`.
+- A new `KNOWN_BROKEN` waiver in `check-image.py` to get a prune past CI.
 
 ## Verification
 
 - [ ] `just validate` resolves the BuildStream graph without errors.
 - [ ] `just dogfood-check` passes.
 - [ ] `just dogfood-install NEXT=<dir>` passes when changing install or update logic.
+- [ ] `just check-image` passes after changing `files/prune/` or a composed stack.
 - [ ] Exported `dist/diskless/` contains the OS DDI, both UKIs, the netboot
       ESP, the sysext assets, `efi-keys/`, `SHA256SUMS`, and `SHA256SUMS.gpg`.
 

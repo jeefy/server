@@ -58,9 +58,17 @@ build-depends:
 - filename: bluefin-server/os-repart.bst
   config:
     location: /repart
+- filename: bluefin-server/prune-lists.bst
+  config:
+    location: /prune
 
 variables:
   image-name: bluefin-server_%{image-version}
+  # terminfo entries the initrd keeps for its emergency shell (console, serial
+  # getty, and common SSH-era terminals); the other ~3000 are dropped.
+  initrd-terminfo: >-
+    ansi dumb linux vt100 vt102 vt220 xterm xterm-256color
+    screen screen-256color tmux tmux-256color alacritty foot wezterm
   initrd-modules: >-
     virtio_net virtio_blk virtio_pci virtio_scsi virtio_rng
     e1000 e1000e igb igc ixgbe i40e ice r8169 tg3 bnxt_en atlantic
@@ -193,6 +201,15 @@ config:
     done
     rm -rf usr/share/man usr/share/doc usr/share/info usr/include usr/lib/*/pkgconfig
     find . -name '*.a' -delete
+    sh /prune/prune.sh /initrd /prune/common.list /prune/initrd.list
+    keep=""
+    for t in %{initrd-terminfo}; do
+      keep="${keep} -name ${t} -o"
+    done
+    find usr/share/terminfo -mindepth 2 ! \( ${keep} -false \) -exec rm -f {} +
+    for t in %{initrd-terminfo}; do
+      [ -e "usr/share/terminfo/$(printf '%.1s' "${t}")/${t}" ] || { echo "ERROR: initrd lacks terminfo ${t}" >&2; exit 1; }
+    done
     du -sh /initrd
     # cpio records mtimes; everything created above carries the build time.
     find . -mindepth 1 -exec touch -h -d "@${SOURCE_DATE_EPOCH}" {} +

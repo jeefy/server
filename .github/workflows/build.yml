@@ -597,6 +597,52 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Pruning guard: every library, dlopen dependency and unit/udev program the
+  # /usr image, initrd and sysexts reference must still ship. The step summary
+  # lists /usr paths added and removed since the latest release.
+  image-check:
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          persist-credentials: false
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: image
+          path: dist/diskless
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends erofs-utils binutils cpio zstd
+
+      - name: Download the latest release's /usr image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p baseline
+          gh release download --pattern '*.usr.raw' --dir baseline \
+            || echo "No previous release; skipping the /usr diff."
+
+      - name: Check image references
+        run: |
+          set -euo pipefail
+          args=(dist/diskless)
+          base="$(find baseline -name '*.usr.raw' | head -n1)"
+          [ -n "${base}" ] && args+=(--baseline-usr "${base}")
+          python3 .github/scripts/check-image.py "${args[@]}"
+
   # Publishes the signed image set as a new, immutable GitHub Release and as
   # an ORAS OCI artifact (one layer per file, tags <version> and, unless a
   # newer version is already published, latest), each
@@ -607,10 +653,10 @@ jobs:
   # each pull request that builds.
   release:
     # Explicit results, not !failure(): a failed kernel-cache (only a cache)
-    # must not hold back a release, and nothing but a built and boot-tested
-    # set may publish.
-    if: ${{ !cancelled() && needs.changes.outputs.release == 'true' && needs.build.result == 'success' && needs.boot-test.result == 'success' }}
-    needs: [changes, build, boot-test]
+    # must not hold back a release, and nothing but a built, boot-tested and
+    # image-checked set may publish.
+    if: ${{ !cancelled() && needs.changes.outputs.release == 'true' && needs.build.result == 'success' && needs.boot-test.result == 'success' && needs.image-check.result == 'success' }}
+    needs: [changes, build, boot-test, image-check]
     runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
@@ -765,7 +811,7 @@ jobs:
   # run and is closed by the next one that passes. Schedule events only; the
   # job holds nothing but issues: write and runs no repository code.
   nightly-status:
-    needs: [changes, build, boot-test]
+    needs: [changes, build, boot-test, image-check]
     if: ${{ !cancelled() && github.event_name == 'schedule' }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10

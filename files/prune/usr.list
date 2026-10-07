@@ -1,0 +1,5 @@
+# Pruned from the /usr image only, after common.list.
+
+# The kernel ships inside the signed UKIs; bluefin-server-boot.bst takes it
+# from bluefin-server/kernel-modules.bst, not from the /usr image.
+usr/lib/modules/*/vmlinuz

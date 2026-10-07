@@ -55,6 +55,7 @@ All local `just` targets run BuildStream inside the FSDK `bst2` container via `j
 | `just gen-dev-keys` | Generate throwaway Secure Boot and image (`SHA256SUMS`) signing keys in `files/boot-keys/` (gitignored), plus the committed public INSECURE dev module pair from `files/dev-keys/` (`--private-module-key` for a fresh one). |
 | `just set-version V` | Set `image-version` in `include/image.yml` (≤17 chars, increasing under strverscmp). |
 | `just build-image` / `just export-image` | Build and export the release image set to `dist/diskless/`. |
+| `just check-image [DIR] [BASELINE]` | Fail on missing libraries or unit/udev programs in an exported set; diff `/usr` against a baseline. |
 | `just dogfood` / `just dogfood-check` | Boot `dist/diskless/` diskless in QEMU with Secure Boot (interactive / headless probe). |
 | `just dogfood-install [<next-dir> [<broken-dir>]]` | QEMU end-to-end: diskless boot, install to disk, boot it, A/B update to `<next-dir>`, then roll back from a broken `<broken-dir>` (`DOGFOOD_SYSEXT=nvidia` or `zfs,nvidia` follows the NVIDIA sysexts instead of, or with, ZFS). |
 | `just publish-oci REF [DIR] [PLAIN_HTTP]` | Push `dist/diskless/` as an ORAS OCI artifact tagged `<version>,latest` (one layer per file). Local rehearsal; CI publishes via `scripts/publish-release.sh`. |
