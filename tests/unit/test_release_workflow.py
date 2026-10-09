@@ -85,14 +85,21 @@ def test_tracker_app_key_only_reaches_the_trackers_environment() -> None:
         for name, job in jobs.items():
             if name == job_name:
                 assert job["environment"] == "trackers", workflow
-                assert "permissions" not in job, f"{workflow}: GITHUB_TOKEN stays read-only"
+                # Write access only for the GITHUB_TOKEN fallback when the
+                # app token cannot be minted.
+                assert job["permissions"] == {"contents": "write", "pull-requests": "write"}, workflow
                 mint = steps(job, "actions/create-github-app-token@")
                 assert len(mint) == 1, workflow
                 assert mint[0]["with"]["permission-contents"] == "write"
                 assert mint[0]["with"]["permission-pull-requests"] == "write"
-                # Minted after every step that runs repository code.
+                assert mint[0]["continue-on-error"] is True, workflow
+                # Minted after every step that runs repository code, then the
+                # token is selected (app token, else GITHUB_TOKEN with a warning).
                 names = [s.get("name") for s in job["steps"]]
-                assert names.index(mint[0]["name"]) == len(names) - 2, workflow
+                assert names.index(mint[0]["name"]) == len(names) - 3, workflow
+                select = job["steps"][-2]
+                assert select["id"] == "token" and "::warning::" in select["run"], workflow
+                assert job["steps"][-1]["env"]["GH_TOKEN"] == "${{ steps.token.outputs.token }}", workflow
             else:
                 assert "secrets." not in json.dumps(job), f"{workflow}:{name}"
 
