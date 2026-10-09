@@ -58,13 +58,8 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     # The mergeraptor app key lives in this environment, which only main may
-    # use. GITHUB_TOKEN holds contents and pull-requests write only as the
-    # fallback when the app token cannot be minted; no step before that
-    # fallback is handed it (the checkout persists no credentials).
+    # use.
     environment: trackers
-    permissions:
-      contents: write
-      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
@@ -86,13 +81,12 @@ jobs:
           python3 .github/scripts/track-binaries.py apply "$COMPONENT" --version "$VERSION" \
             --summary "$RUNNER_TEMP/pr-body.md" > "$RUNNER_TEMP/files.txt"
 
-      # The push and the pull request use the
+      # GITHUB_TOKEN stays read-only. The push and the pull request use the
       # mergeraptor app token (pushes made with GITHUB_TOKEN never trigger CI),
       # narrowed to what this job does and minted only after the apply step,
       # which downloads upstream assets; it is never written to .git/config.
       - name: Get mergeraptor token
         id: app-token
-        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.MERGERAPTOR_APP_ID }}
@@ -104,27 +98,9 @@ jobs:
           # value requests nothing.
           permission-workflows: ${{ matrix.component == 'oras' && 'write' || '' }}
 
-      # Without the app token (e.g. the App is not installed on the
-      # repository) still propose the change, with GITHUB_TOKEN, loudly.
-      # GITHUB_TOKEN cannot get the Workflows permission, so the ORAS
-      # proposal (it edits build.yml) still fails its push without the App.
-      - name: Select token
-        id: token
-        env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          FALLBACK_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ -n "${APP_TOKEN}" ]; then
-            echo "token=${APP_TOKEN}" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::mergeraptor App token unavailable (is the App installed on this repository?); falling back to GITHUB_TOKEN — the PR will not trigger CI workflows until a maintainer pushes to it or applies the full-build label"
-            echo "token=${FALLBACK_TOKEN}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Create or update the pull request
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           COMPONENT: ${{ matrix.component }}
           FROM: ${{ matrix.current }}
           TO: ${{ matrix.latest }}
