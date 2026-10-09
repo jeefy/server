@@ -4,7 +4,7 @@ description: Roadmap for future Bluefin Server architecture work. Use when plann
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-09-29"
+  last_updated: "2026-10-08"
   context7-sources:
     - /systemd/systemd
 ---
@@ -49,6 +49,10 @@ Priorities are derived from [gap-analysis-distros.md](gap-analysis-distros.md).
 - The current tree intentionally favors a small, verifiable core: verity-sealed `/usr`, A/B slots, signed boot chain, opt-in sysexts.
 - Any implementation work should preserve the current systemd-native model and avoid custom daemons.
 - See [gap-analysis-distros.md](gap-analysis-distros.md) for the source-verified comparison that produced this list.
+
+## Decided, not planned
+
+- **OS payload and kernel source.** Between #132 and #262 the OS payload was briefly the imported Flatcar `/usr` with its kernel, and [#249](https://github.com/projectbluefin/server/issues/249) collected notes on shipping alternative kernels (Fedora CoreOS, Flatcar LTS, Ubuntu Server) as extra UKIs. #262 settled this: the whole OS, kernel included, composes from FSDK components (AGENTS.md hard rule 1), and there is one kernel per image. Alternative kernels or a Flatcar-based payload are not planned; reopening either means changing hard rule 1 first.
 
 ## See also
 
