@@ -97,13 +97,70 @@ arg() {
     [[ "${output}" == *"<3>"*"not released: HTTP 500"* ]]
 }
 
-@test "an unreachable server refuses the reboot" {
+@test "a server that answers is never unreachable, whatever the status" {
     printf 'URL=https://fleetlock.example\n' > "${CONF}"
-    CURL_EXIT=7 lock acquire
-    [ "${status}" -eq 1 ]
-    [[ "${output}" == *"cannot reach FleetLock server https://fleetlock.example/v1/pre-reboot"* ]]
+    for code in 302 404 503; do
+        REPLY_CODE="${code}" lock acquire
+        [ "${status}" -eq 1 ]
+        [[ "${output}" == *"HTTP ${code}"*"not rebooting"* ]]
+        [[ "${output}" != *unreachable* ]]
+    done
+}
+
+@test "an unreachable server exits 3, not 1" {
+    # 1 would make bluefin-boot-deadline wait for the server; 3 lets it roll
+    # back a boot whose update broke the network (DNS, connect, timeout, TLS).
+    printf 'URL=https://fleetlock.example\n' > "${CONF}"
+    for rc in 6 7 28 35; do
+        CURL_EXIT="${rc}" lock acquire
+        [ "${status}" -eq 3 ]
+        [[ "${output}" == *"<3>FleetLock server https://fleetlock.example/v1/pre-reboot is unreachable (id 0123456789abcdef0123456789abcdef, group default): curl exit ${rc}"* ]]
+        [[ "${output}" != *"not rebooting"* ]]
+    done
     CURL_EXIT=7 lock release
+    [ "${status}" -eq 3 ]
+    [[ "${output}" == *"https://fleetlock.example/v1/steady-state is unreachable"* ]]
+}
+
+@test "messages show the URL without its credentials" {
+    printf 'URL=https://user:secret@fleetlock.example/base/\n' > "${CONF}"
+    lock acquire
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"holding a reboot slot on https://fleetlock.example/base ("* ]]
+    [[ "${output}" != *secret* ]]
+    # The request itself still carries them.
+    [ "$(tail -n 1 "${CURL_ARGS}")" = "https://user:secret@fleetlock.example/base/v1/pre-reboot" ]
+
+    REPLY_CODE=409 lock acquire
     [ "${status}" -eq 1 ]
+    [[ "${output}" == *"no reboot slot on https://fleetlock.example/base ("* ]]
+    [[ "${output}" != *secret* ]]
+
+    REPLY_CODE=500 lock release
+    [ "${status}" -eq 1 ]
+    [[ "${output}" == *"the reboot slot on https://fleetlock.example/base ("* ]]
+    [[ "${output}" != *secret* ]]
+
+    CURL_EXIT=7 lock acquire
+    [ "${status}" -eq 3 ]
+    [[ "${output}" == *"FleetLock server https://fleetlock.example/base/v1/pre-reboot is unreachable"* ]]
+    [[ "${output}" != *secret* ]]
+
+    # An "@" in the password, against RFC 3986 but easy to write.
+    printf 'URL=https://user:se@cret@fleetlock.example\n' > "${CONF}"
+    lock acquire
+    [ "${status}" -eq 0 ]
+    [[ "${output}" == *"holding a reboot slot on https://fleetlock.example ("* ]]
+    [[ "${output}" != *cret* ]]
+
+    # Refused before any request, still without them.
+    for bad in 'ftp://user:secret@fleetlock.example' 'user:secret@fleetlock.example'; do
+        printf 'URL=%s\n' "${bad}" > "${CONF}"
+        lock acquire
+        [ "${status}" -eq 1 ]
+        [[ "${output}" == *"fleetlock.example is not an http(s) URL"* ]]
+        [[ "${output}" != *secret* ]]
+    done
 }
 
 @test "credentials override the config file" {

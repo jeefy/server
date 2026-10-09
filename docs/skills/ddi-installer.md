@@ -293,9 +293,12 @@ only when a newer version than the booted one is installed.
     that run. `systemd-sysupdate-reboot.timer.d/20-fleet-lock.conf` adds runs
     at 04:40 and 05:10, each with up to 30 minutes of random delay, so a group
     takes turns within one night. `bluefin-boot-deadline` takes a slot before
-    it reboots a counted boot and, without one, runs again every 5 minutes
-    (exit 75, `RestartForceExitStatus=`). A node that rebooted for an update
-    still holds its slot, so its tries and the fallback are not delayed.
+    it reboots a counted boot and, when the server refuses one, runs again
+    every 5 minutes (exit 75, `RestartForceExitStatus=`). When the server
+    cannot be reached at all (the client exits 3, not 1) it reboots without a
+    slot, since the update it rolls back may be what broke the network. A node
+    that rebooted for an update still holds its slot, so its tries and the
+    fallback are not delayed.
   - *Release*: `bluefin-reboot-lock-release.service` gives the slot back after
     `boot-complete.target`, only when `systemd-bless-boot status` is `good` or
     `clean` (not counted, e.g. the previous UKI after a rollback), and retries

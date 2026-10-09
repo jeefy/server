@@ -23,8 +23,12 @@
 #     stopped or failed leaves the node NotReady with nothing to drain, and
 #     kured cannot run there either, so that node reboots directly. With a
 #     FleetLock server configured it first takes a reboot slot
-#     (bluefin-reboot-lock acquire); when it gets none it exits 75 and
-#     bluefin-boot-deadline.service runs it again later (RestartForceExitStatus=).
+#     (bluefin-reboot-lock acquire); when the server refuses one (or the
+#     client fails otherwise) it exits 75 and bluefin-boot-deadline.service
+#     runs it again later (RestartForceExitStatus=). When the server cannot
+#     be reached (the client exits 3) it reboots without a slot: the update it
+#     rolls back may be what broke the network, DNS or TLS, and waiting would
+#     keep the node on it for good.
 #     A node that rebooted for an update still holds its slot until a boot is
 #     good, so its tries and the fallback get the slot straight away.
 #
@@ -122,10 +126,16 @@ for u in kubelet.service k0scontroller.service k0sworker.service; do
   esac
 done
 
-if ! "${reboot_lock}" acquire; then
-  warn "${msg}; no fleet reboot slot, retrying later"
-  exit 75
-fi
+rc=0
+"${reboot_lock}" acquire || rc=$?
+case "${rc}" in
+  0) ;;
+  3)
+    warn "the FleetLock server could not be reached; the rollback goes ahead without a reboot slot" ;;
+  *)
+    warn "${msg}; no fleet reboot slot, retrying later"
+    exit 75 ;;
+esac
 
 err "${msg}; rebooting so systemd-boot falls back after the last try"
 exec systemctl --no-block reboot

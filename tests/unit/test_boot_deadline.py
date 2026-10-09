@@ -84,7 +84,7 @@ def deadline(
     units: dict[str, str] | None = None,
     ukis: tuple[str, ...] = (),
     lock: bool = False,
-    slot: bool = True,
+    fleet: int = 0,
 ):
     bindir = tmp_path / "bin"
     bindir.mkdir()
@@ -122,9 +122,10 @@ def deadline(
     if lock:
         lockfile.touch()
     sentinel = tmp_path / "run" / "reboot-required"
-    # The FleetLock client: grants the slot unless slot=False.
-    fleet = tmp_path / "bluefin-reboot-lock"
-    executable(fleet, f'echo "$*" >> {tmp_path / "fleet.calls"}\nexit {0 if slot else 1}\n')
+    # The FleetLock client exits with `fleet`: 0 slot held, 1 refused,
+    # 3 server unreachable.
+    client = tmp_path / "bluefin-reboot-lock"
+    executable(client, f'echo "$*" >> {tmp_path / "fleet.calls"}\nexit {fleet}\n')
     env = dict(
         os.environ,
         PATH=f"{bindir}:{os.environ['PATH']}",
@@ -133,11 +134,12 @@ def deadline(
         BLUEFIN_OS_RELEASE=str(os_release),
         BLUEFIN_REBOOT_LOCKS=f"{tmp_path / 'run-reboot-lock'} {lockfile}",
         BLUEFIN_REBOOT_SENTINEL=str(sentinel),
-        BLUEFIN_REBOOT_LOCK=str(fleet),
+        BLUEFIN_REBOOT_LOCK=str(client),
     )
     result = subprocess.run([str(DEADLINE)], capture_output=True, text=True, env=env, timeout=30)
     # 75: no fleet reboot slot; bluefin-boot-deadline.service runs it again.
-    assert result.returncode == (0 if slot else 75), result.stdout + result.stderr
+    # An unreachable server (3) does not hold the rollback.
+    assert result.returncode == (0 if fleet in (0, 3) else 75), result.stdout + result.stderr
     rebooted = "--no-block reboot" in (calls.read_text(encoding="utf-8") if calls.exists() else "")
     return rebooted, sentinel.exists(), result.stdout + result.stderr
 
@@ -206,11 +208,22 @@ def test_last_try_without_a_fallback_does_not_loop(tmp_path: Path) -> None:
 
 
 def test_reboot_waits_for_a_fleet_reboot_slot(tmp_path: Path) -> None:
-    # A rollback reboot must not bypass the FleetLock server either.
-    rebooted, flagged, log = deadline(tmp_path, "indeterminate", slot=False)
+    # A rollback reboot must not bypass a FleetLock server that refuses it.
+    rebooted, flagged, log = deadline(tmp_path, "indeterminate", fleet=1)
     assert not rebooted and not flagged, log
     assert (tmp_path / "fleet.calls").read_text(encoding="utf-8") == "acquire\n"
     assert "no fleet reboot slot, retrying later" in log
+
+
+@pytest.mark.parametrize("status", ["indeterminate", "bad"])
+def test_unreachable_fleet_lock_server_does_not_hold_the_rollback(tmp_path: Path, status: str) -> None:
+    # The update being rolled back may be what broke the network, DNS or TLS;
+    # waiting for the server would keep the node on it for good.
+    rebooted, flagged, log = deadline(tmp_path, status, fleet=3)
+    assert rebooted and not flagged, log
+    assert (tmp_path / "fleet.calls").read_text(encoding="utf-8") == "acquire\n"
+    assert "<4>the FleetLock server could not be reached; the rollback goes ahead without a reboot slot" in log
+    assert "rebooting so systemd-boot falls back after the last try" in log
 
 
 def test_reboot_takes_the_fleet_slot_first(tmp_path: Path) -> None:
