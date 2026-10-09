@@ -84,6 +84,7 @@ def deadline(
     units: dict[str, str] | None = None,
     ukis: tuple[str, ...] = (),
     lock: bool = False,
+    slot: bool = True,
 ):
     bindir = tmp_path / "bin"
     bindir.mkdir()
@@ -121,6 +122,9 @@ def deadline(
     if lock:
         lockfile.touch()
     sentinel = tmp_path / "run" / "reboot-required"
+    # The FleetLock client: grants the slot unless slot=False.
+    fleet = tmp_path / "bluefin-reboot-lock"
+    executable(fleet, f'echo "$*" >> {tmp_path / "fleet.calls"}\nexit {0 if slot else 1}\n')
     env = dict(
         os.environ,
         PATH=f"{bindir}:{os.environ['PATH']}",
@@ -129,9 +133,11 @@ def deadline(
         BLUEFIN_OS_RELEASE=str(os_release),
         BLUEFIN_REBOOT_LOCKS=f"{tmp_path / 'run-reboot-lock'} {lockfile}",
         BLUEFIN_REBOOT_SENTINEL=str(sentinel),
+        BLUEFIN_REBOOT_LOCK=str(fleet),
     )
     result = subprocess.run([str(DEADLINE)], capture_output=True, text=True, env=env, timeout=30)
-    assert result.returncode == 0, result.stdout + result.stderr
+    # 75: no fleet reboot slot; bluefin-boot-deadline.service runs it again.
+    assert result.returncode == (0 if slot else 75), result.stdout + result.stderr
     rebooted = "--no-block reboot" in (calls.read_text(encoding="utf-8") if calls.exists() else "")
     return rebooted, sentinel.exists(), result.stdout + result.stderr
 
@@ -197,3 +203,32 @@ def test_last_try_without_a_fallback_does_not_loop(tmp_path: Path) -> None:
     rebooted, _, log = deadline(tmp_path, "dirty", ukis=("bluefin-server-26.09.4+0-3.efi",))
     assert not rebooted, log
     assert "no other UKI to fall back to" in log
+
+
+def test_reboot_waits_for_a_fleet_reboot_slot(tmp_path: Path) -> None:
+    # A rollback reboot must not bypass the FleetLock server either.
+    rebooted, flagged, log = deadline(tmp_path, "indeterminate", slot=False)
+    assert not rebooted and not flagged, log
+    assert (tmp_path / "fleet.calls").read_text(encoding="utf-8") == "acquire\n"
+    assert "no fleet reboot slot, retrying later" in log
+
+
+def test_reboot_takes_the_fleet_slot_first(tmp_path: Path) -> None:
+    rebooted, _, log = deadline(tmp_path, "indeterminate")
+    assert rebooted, log
+    assert (tmp_path / "fleet.calls").read_text(encoding="utf-8") == "acquire\n"
+
+
+@pytest.mark.parametrize("units", [{"kubelet.service": "active"}, {}])
+def test_kured_and_operator_holds_never_take_a_fleet_slot(tmp_path: Path, units: dict[str, str]) -> None:
+    rebooted, _, log = deadline(tmp_path, "indeterminate", units=units, lock=not units)
+    assert not rebooted, log
+    assert not (tmp_path / "fleet.calls").exists()
+
+
+def test_deadline_retries_only_when_no_fleet_slot_was_free() -> None:
+    service = ini(UNITS / "bluefin-boot-deadline.service")["Service"]
+    assert service["RestartForceExitStatus"] == "75"
+    assert service.get("Restart", "no") == "no"
+    assert service["RestartSec"] == "5min"
+    assert service["ImportCredential"] == "bluefin.reboot-lock.*"
