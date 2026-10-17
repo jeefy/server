@@ -3,3 +3,101 @@
 # The kernel ships inside the signed UKIs; bluefin-server-boot.bst takes it
 # from bluefin-server/kernel-modules.bst, not from the /usr image.
 usr/lib/modules/*/vmlinuz
+
+# GnuPG beyond signature verification. systemd-pull (systemd-sysupdate on
+# installed nodes) execs gpg, which starts gpg-agent and keyboxd;
+# bluefin-diskless-update-check runs gpgv. Those four stay.
+usr/bin/gpgsm
+usr/bin/gpg-wks-client
+usr/bin/gpg-wks-server
+usr/bin/gpgtar
+usr/bin/gpg-card
+usr/bin/gpg-mail-tube
+usr/bin/gpgsplit
+usr/bin/gpgparsemail
+usr/bin/gpgscm
+usr/bin/gpgconf
+usr/bin/gpg-connect-agent
+usr/bin/dirmngr
+usr/bin/dirmngr-client
+usr/bin/kbxutil
+usr/bin/watchgnupg
+usr/bin/addgnupghome
+usr/bin/applygnupgdefaults
+usr/libexec/gpg-wks-client
+usr/libexec/scdaemon
+usr/libexec/gpg-auth
+usr/libexec/gpg-check-pattern
+usr/libexec/gpg-pair-tool
+usr/libexec/gpg-preset-passphrase
+usr/libexec/gpg-protect-tool
+usr/share/gnupg
+# libgpg-error and libgcrypt developer tools and Lisp bindings.
+usr/bin/gpg-error
+usr/bin/mpicalc
+usr/bin/hmac256
+usr/bin/dumpsexp
+usr/share/common-lisp
+
+# cracklib tools and its uncompiled word list: no pw_dict is built into the
+# image, so only create-cracklib-dict ever read it. libpwquality keeps libcrack.
+usr/bin/cracklib-*
+usr/bin/create-cracklib-dict
+usr/share/cracklib
+
+# LVM2: nothing creates or activates volume groups. Device-mapper stays:
+# libdevmapper, dmsetup and 10-dm, 13-dm-disk and 95-dm-notify.rules serve
+# dm-verity /usr and cryptsetup. 11-dm-lvm.rules only acts on LVM- devices;
+# 69-dm-lvm.rules runs lvm pvscan.
+usr/bin/lvm
+usr/bin/lv*
+usr/bin/vg*
+usr/bin/pv*
+usr/bin/dmeventd
+usr/bin/fsadm
+usr/bin/blkdeactivate
+usr/libexec/lvresize_fs_helper
+usr/lib/*-linux-gnu/liblvm2cmd.so*
+usr/lib/*-linux-gnu/libdevmapper-event*.so*
+usr/lib/*-linux-gnu/device-mapper
+usr/lib/udev/rules.d/11-dm-lvm.rules
+usr/lib/udev/rules.d/69-dm-lvm.rules
+
+# Headers and pkg-config files (libdevmapper's): nothing builds on a node.
+usr/include
+usr/lib/*-linux-gnu/pkgconfig
+
+# OpenSSL CLI; libssl and libcrypto stay.
+usr/bin/openssl
+
+# Interactive util-linux leftovers; no node script or documented workflow runs
+# them (less is the pager).
+usr/bin/cal
+usr/bin/hexdump
+usr/bin/look
+usr/bin/mesg
+usr/bin/more
+usr/bin/rev
+usr/bin/ul
+
+# SQLite CLI (gpg, keyboxd and liblastlog2 keep libsqlite3).
+usr/bin/sqlite3
+
+# Build-time generators: e2fsprogs' compile_et/mk_cmds, libtasn1's ASN.1
+# tools, pcre2's test driver, bash's bug reporter.
+usr/bin/compile_et
+usr/bin/mk_cmds
+usr/bin/asn1Coding
+usr/bin/asn1Decoding
+usr/bin/asn1Parser
+usr/bin/pcre2test
+usr/bin/bashbug
+
+# Python scripts; the image has no Python.
+usr/bin/psl-make-dafsa
+usr/bin/routel
+usr/bin/xfs_protofile
+
+# Completions for shells the image does not ship (bash completions stay).
+usr/share/zsh
+usr/share/fish
