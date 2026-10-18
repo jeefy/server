@@ -83,7 +83,7 @@ Before merging a bump:
   appended below `0006` in the same `fdsdk-config.sh`; `0008` pins
   `elements/include/go-source.yml` to go1.27.2 and is dropped once FSDK itself
   ships that Go or newer; `0009`, appended below `0007`, turns off the
-  firmware-bound Wi-Fi, Bluetooth and GPU drivers and compresses vmlinuz with
+  firmware-bound Wi-Fi, Bluetooth and GPU drivers and compresses the x86_64 vmlinuz with
   zstd. A bumper must not drop `0006` or the kubeadm and
   k0s sysexts lose their datapath. If a release changed a patched file,
   refresh the patches in place, `0006` before `0007` before `0009`; never delete `0006` because "it looks small". Why each patch exists and when it can be dropped is in
