@@ -326,9 +326,11 @@ own; see [secure-boot-keys.md](secure-boot-keys.md).
   discovery for every transfer.
 - **One combined manifest per release set.** All transfers share the same
   `Path=` and therefore the same `SHA256SUMS` file. The manifest is written
-  and signed inside `oci/bluefin-server-image.bst`, covers every file in
-  `dist/diskless/` (OS images, UKIs, and the sysext `.raw.zst` assets), and
-  the release publishes that directory as-is. There is no second manifest.
+  and signed inside `oci/bluefin-server-image.bst`, covers every file the
+  image build produces (OS images, UKIs, and the sysext `.raw.zst` assets),
+  and the release publishes `dist/diskless/` as-is. The one file it does not
+  list is the informational `bluefin-server_<ver>.size.json`, which CI adds
+  after the build. There is no second manifest.
 - **`Verify=` belongs to `[Transfer]`, not `[Source]`.** It defaults to `yes`;
   no transfer in the tree overrides it.
 - **Testing the trust chain locally.** `scripts/dogfood-diskless.sh` already
@@ -356,6 +358,8 @@ own; see [secure-boot-keys.md](secure-boot-keys.md).
       `scripts/publish-release.sh`, and `release-dry-run` runs the same
       `verify`, `release --dry-run` and `oci` commands on pull requests.
 - [ ] `bluefin-server_<ver>.spdx.json` is listed in `SHA256SUMS`.
+- [ ] `bluefin-server_<ver>.size.json` is the only published file not listed
+      in `SHA256SUMS`, and `publish-release.sh verify` says so.
 - [ ] Every transfer in `files/os/sysupdate.d/*.transfer` and the k0s
       component directory uses a static `Path=` with no `@v` placeholder.
 - [ ] Every transfer uses `@v` only inside `MatchPattern=`.
