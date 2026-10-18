@@ -49,7 +49,7 @@ def test_oras_is_pinned_identically_in_both_jobs() -> None:
 def test_build_boot_test_and_dry_run_check_out_the_triggering_commit() -> None:
     # Not the branch tip: main runs queue, so a tip checkout could pair one
     # commit's image set with a later commit's boot-test harness.
-    for name in ("build", "boot-test", "release-dry-run"):
+    for name in ("boot-test-preflight", "build", "boot-test", "release-dry-run"):
         checkout = steps(JOBS[name], "actions/checkout@")[0]["with"]
         assert checkout["ref"] == "${{ github.event.pull_request.head.sha || github.sha }}", name
         assert checkout["repository"] == "${{ github.event.pull_request.head.repo.full_name || github.repository }}", name

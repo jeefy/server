@@ -63,7 +63,7 @@ def test_qemu_and_ovmf_come_from_the_one_install_script() -> None:
     assert "apt-get" not in str(JOB["steps"]) and "OVMF_RPM" not in BUILD_YML
     users = [name for name, job in JOBS.items()
              if any(s.get("run") == "bash scripts/ci/install-qemu-ovmf.sh" for s in job.get("steps", []))]
-    assert users == ["boot-test"]
+    assert users == ["boot-test-preflight", "boot-test"]
 
 
 @pytest.mark.parametrize("release", [False, True], ids=["pull-request", "release"])

@@ -226,11 +226,36 @@ jobs:
           echo "::warning title=Kernel cache not seeded::${msg}"
           echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
 
-  build:
-    needs: [changes, kernel-cache]
-    # Runs when kernel-cache is skipped (non-release builds) or failed: the
-    # cache only saves time.
+  # Installs what the boot test runs and checks every host tool its dogfood
+  # scripts call is there (scripts/ci/dogfood-preflight.sh), in about a
+  # minute, so a missing one fails before the build instead of after it.
+  boot-test-preflight:
+    needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.image == 'true' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The commit `build` builds and boot-test checks out.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          persist-credentials: false
+
+      - name: Install QEMU and OVMF
+        run: bash scripts/ci/install-qemu-ovmf.sh
+
+      - name: Check the boot test's host tools
+        run: bash scripts/ci/dogfood-preflight.sh
+
+  build:
+    needs: [changes, kernel-cache, boot-test-preflight]
+    # Runs when kernel-cache is skipped (non-release builds) or failed: the
+    # cache only saves time. A failed preflight stops it.
+    if: ${{ !cancelled() && needs.changes.outputs.image == 'true' && needs.boot-test-preflight.result == 'success' }}
     # The signing secrets live in the `release` environment, which only main
     # may use. Every other build runs with no environment (an empty name):
     # a pull request asking for `release` would be refused before any step.
