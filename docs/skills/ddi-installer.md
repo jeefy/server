@@ -341,8 +341,10 @@ only when a newer version than the booted one is installed.
     happen; anything but HTTP 200 (all slots taken, server unreachable) skips
     that run. `bluefin-fleet-reboot.timer` starts the reboot unit again at
     04:40 and 05:10, each with up to 30 minutes of random delay, so a group
-    takes turns within one night; only nodes that have the file or the URL
-    credential at boot get these runs. `bluefin-boot-deadline` takes a slot
+    takes turns within one night; only nodes that have the file, or the URL
+    as a system credential PID 1 received (SMBIOS, a `.cred` on the ESP), get
+    these runs: a URL placed only in `/etc/credstore` still works for the
+    lock but gets the single upstream run. `bluefin-boot-deadline` takes a slot
     before it reboots a counted boot and, when the server refuses one, runs
     again every 5 minutes (exit 75, `RestartForceExitStatus=`). When the server
     cannot be reached at all (the client exits 3, not 1) it reboots without a
