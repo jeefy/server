@@ -4,7 +4,7 @@ description: Configure and operate GPG signature verification for Bluefin Server
 metadata:
   type: reference
   status: stable
-  last_updated: "2026-10-03"
+  last_updated: "2026-10-17"
   context7-sources:
     - /systemd/systemd
 ---
@@ -212,7 +212,11 @@ tell a human or a policy engine which commit and workflow run produced it.
   `verify` checks what nodes will check (`gpgv` against the keyring, every
   `SHA256SUMS` entry present and matching), plus: every published file is
   listed, every file name carries the release version, and the SBOM is valid
-  SPDX 2.3. `release` creates the GitHub Release at the built commit. `oci`
+  SPDX 2.3. Only the size report `bluefin-server_<ver>.size.json`, which
+  `image-check` writes after the build (see `ci-tooling.md`), is published
+  unlisted: information for humans that no signature covers and no transfer
+  matches, so `verify` only checks that it reports this version.
+  `release` creates the GitHub Release at the built commit. `oci`
   pushes the ORAS artifact, then checks the registry manifest layer by layer
   against the local files. Neither moves `latest` backwards: `release`
   passes `--latest` only when no published release sorts above the version
