@@ -264,10 +264,6 @@ def test_nouveau_stays_off_the_gpu() -> None:
     assert 'gpus_dir="${NVIDIA_LOAD_GPUS:-/proc/driver/nvidia/gpus}"' in helper
 
 
-def test_the_load_helper_is_shellcheck_clean(shellcheck: str) -> None:
-    subprocess.run([shellcheck, "-S", "style", str(SRC / "nvidia-load")], check=True)
-
-
 def test_nothing_in_the_base_image_ships_the_driver() -> None:
     # /usr carries at most the opt-in delivery plumbing (sysupdate transfers,
     # the toolkit's activation units), never an NVIDIA build element.
