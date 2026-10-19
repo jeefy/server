@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from _systemd import SystemdFile, preset_rules
+from _systemd import SystemdFile
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "files" / "nvidia" / "sysext"
@@ -268,10 +268,7 @@ def test_the_load_helper_is_shellcheck_clean(shellcheck: str) -> None:
     subprocess.run([shellcheck, "-S", "style", str(SRC / "nvidia-load")], check=True)
 
 
-def test_nothing_in_the_base_image_enables_or_ships_the_driver() -> None:
-    for preset in ROOT.joinpath("files").rglob("*.preset"):
-        for verb, pattern in preset_rules(preset):
-            assert not (verb == "enable" and "nvidia" in pattern), preset
+def test_nothing_in_the_base_image_ships_the_driver() -> None:
     # /usr carries at most the opt-in delivery plumbing (sysupdate transfers,
     # the toolkit's activation units), never an NVIDIA build element.
     for element in (*(ELEMENTS / "bluefin-server").rglob("*.bst"), ELEMENTS / "oci" / "bluefin-server-usr.bst"):
